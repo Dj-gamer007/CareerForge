@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: careerforge-backend-test
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+
+careerforge:
+  jwt:
+    secret: c3VwZXItc2VjcmV0LWtleS1mb3ItY2FyZWVyZm9yZ2UtYXBwbGljYXRpb24tcHJvZHVjdGlvbi1yZWFkeQ==
+    expiration-ms: 3600000 # 1 hour
+    refresh-expiration-ms: 86400000 # 24 hours
+  matching:
+    required-skill-weight: 2.0
+    optional-skill-weight: 1.0
+  storage:
+    local-dir: ./target/test-uploads
+
+logging:
+  level:
+    root: INFO
+    com.careerforge: DEBUG

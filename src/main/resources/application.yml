@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: careerforge-backend
+  profiles:
+    active: dev
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/careerforge_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root1234}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+
+careerforge:
+  jwt:
+    secret: ${JWT_SECRET:c3VwZXItc2VjcmV0LWtleS1mb3ItY2FyZWVyZm9yZ2UtYXBwbGljYXRpb24tcHJvZHVjdGlvbi1yZWFkeQ==}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
+  matching:
+    required-skill-weight: ${MATCHING_REQUIRED_WEIGHT:2.0}
+    optional-skill-weight: ${MATCHING_OPTIONAL_WEIGHT:1.0}
+  storage:
+    local-dir: ${STORAGE_LOCAL_DIR:./uploads/resumes}
+
+logging:
+  level:
+    root: INFO
+    com.careerforge: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework.security: INFO

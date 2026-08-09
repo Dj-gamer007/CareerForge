@@ -1,0 +1,38 @@
+# Environment files & Secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+
+# Maven / Build output
+target/
+*.jar
+*.war
+*.ear
+*.zip
+*.class
+
+# Tools directory (local Apache Maven & MinGit binaries)
+tools/
+
+# User uploads & runtime directories
+uploads/
+logs/
+*.log
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
