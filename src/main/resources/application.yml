@@ -16,6 +16,11 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 5MB
+      max-request-size: 5MB
 
 server:
   port: ${SERVER_PORT:8080}
@@ -33,6 +38,7 @@ careerforge:
     optional-skill-weight: ${MATCHING_OPTIONAL_WEIGHT:1.0}
   storage:
     local-dir: ${STORAGE_LOCAL_DIR:./uploads/resumes}
+    max-file-size-bytes: ${STORAGE_MAX_FILE_SIZE:5242880} # 5MB
 
 logging:
   level:

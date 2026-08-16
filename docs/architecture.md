@@ -428,6 +428,38 @@ com.careerforge
 - `POST /api/v1/auth/logout` — Revoke active refresh token.
 - `GET /api/v1/auth/me` — Fetch current authenticated user info.
 
+### 5.2 Student Module (`/api/v1/students` — Role: `ROLE_STUDENT`)
+- **Profile Management**:
+  - `GET /api/v1/students/profile` — Get profile of authenticated student with server-calculated completion %.
+  - `POST /api/v1/students/profile` — Create student profile.
+  - `PUT /api/v1/students/profile` — Update student profile.
+- **Skills Management**:
+  - `GET /api/v1/students/skills` — List student skills and proficiencies.
+  - `POST /api/v1/students/skills` — Add skill (duplicate-protected).
+  - `PUT /api/v1/students/skills/{skillId}` — Update skill proficiency (`BEGINNER`, `INTERMEDIATE`, `ADVANCED`, `EXPERT`).
+  - `DELETE /api/v1/students/skills/{skillId}` — Remove skill from student profile.
+- **Education Management**:
+  - `GET /api/v1/students/education` — List education history.
+  - `POST /api/v1/students/education` — Add education record.
+  - `PUT /api/v1/students/education/{id}` — Update education record (ownership-scoped).
+  - `DELETE /api/v1/students/education/{id}` — Delete education record (ownership-scoped).
+- **Projects Management**:
+  - `GET /api/v1/students/projects` — List project records.
+  - `POST /api/v1/students/projects` — Add project record.
+  - `PUT /api/v1/students/projects/{id}` — Update project record (ownership-scoped).
+  - `DELETE /api/v1/students/projects/{id}` — Delete project record (ownership-scoped).
+- **Certifications Management**:
+  - `GET /api/v1/students/certifications` — List certification records.
+  - `POST /api/v1/students/certifications` — Add certification record.
+  - `PUT /api/v1/students/certifications/{id}` — Update certification record (ownership-scoped).
+  - `DELETE /api/v1/students/certifications/{id}` — Delete certification record (ownership-scoped).
+- **Resume Management**:
+  - `POST /api/v1/students/resumes` — Upload PDF resume (MIME/ext/size validated, stored on filesystem).
+  - `GET /api/v1/students/resumes` — List resume metadata (no binary content in DB).
+  - `GET /api/v1/students/resumes/{id}/download` — Stream/download resume binary PDF.
+  - `PUT /api/v1/students/resumes/{id}/active` — Set active resume.
+  - `DELETE /api/v1/students/resumes/{id}` — Delete resume from disk and database.
+
 ---
 
 ## 6. Configurable & Testable Skill-Matching Algorithm
