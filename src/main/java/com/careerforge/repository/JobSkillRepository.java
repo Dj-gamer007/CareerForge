@@ -18,6 +18,9 @@ public interface JobSkillRepository extends JpaRepository<JobSkill, Long> {
     @Query("SELECT js FROM JobSkill js JOIN FETCH js.skill WHERE js.job = :job")
     List<JobSkill> findAllByJobWithSkill(@Param("job") Job job);
 
+    @Query("SELECT js FROM JobSkill js JOIN FETCH js.skill WHERE js.job.id = :jobId")
+    List<JobSkill> findAllByJob_IdWithSkill(@Param("jobId") Long jobId);
+
     @Query("SELECT js FROM JobSkill js JOIN FETCH js.skill WHERE js.job.id IN :jobIds")
     List<JobSkill> findAllByJob_IdInWithSkill(@Param("jobIds") Collection<Long> jobIds);
 

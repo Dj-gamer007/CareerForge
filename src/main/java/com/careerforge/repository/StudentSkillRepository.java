@@ -20,6 +20,9 @@ public interface StudentSkillRepository extends JpaRepository<StudentSkill, Long
     @Query("SELECT ss FROM StudentSkill ss JOIN FETCH ss.skill WHERE ss.studentProfile = :profile")
     List<StudentSkill> findAllByStudentProfileWithSkill(@Param("profile") StudentProfile profile);
 
+    @Query("SELECT ss FROM StudentSkill ss JOIN FETCH ss.skill WHERE ss.studentProfile.id = :studentProfileId")
+    List<StudentSkill> findAllByStudentProfile_IdWithSkill(@Param("studentProfileId") Long studentProfileId);
+
     Optional<StudentSkill> findByStudentProfileAndSkill_Id(StudentProfile profile, Long skillId);
 
     boolean existsByStudentProfileAndSkill_Id(StudentProfile profile, Long skillId);
