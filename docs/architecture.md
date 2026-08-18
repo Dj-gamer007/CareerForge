@@ -1,6 +1,6 @@
 # CareerForge — Technical Architecture & System Blueprint
 
-**Document Version:** 1.1.0  
+**Document Version:** 1.2.0  
 **Project:** CareerForge — Intelligent Career & Recruitment Management Platform  
 **Target Architecture:** Production-Grade Layered Java Full-Stack System  
 
@@ -8,15 +8,15 @@
 
 ## 1. System Requirements & Domain Analysis
 
-CareerForge is an enterprise-ready career management and recruitment platform designed around three primary user personas: **Student**, **Recruiter**, and **Admin**. The platform provides automated job recommendations, candidate-job skill matching with gap analysis, lifecycle application tracking, company management, resume storage abstraction, real-time platform notifications, and administrative audit logging.
+CareerForge is an enterprise-ready career management and recruitment platform designed around three primary user personas: **Student**, **Recruiter**, and **Admin**. The platform provides automated candidate-job skill matching with deterministic gap analysis, full lifecycle applicant tracking (ATS), company profile management, resume storage abstraction, real-time platform notifications, and administrative moderation.
 
 ### 1.1 Persona Capability Matrix
 
-| Role | Key Capabilities & Features |
+| Role | Implemented Phase 1–4 Capabilities |
 | :--- | :--- |
-| **STUDENT** | - Professional Profile Management (Education, Experience, Skills, Certifications)<br>- Multi-Resume Upload (Local Storage Abstraction) & Primary Resume Selection<br>- Job Search with Dynamic Filtering & Sorting<br>- Configurable Rule-Based Job Recommendation Engine & Skill-Gap Analysis<br>- Job Bookmarking / Saved Jobs<br>- Application Submission & Real-time Lifecycle Tracking<br>- Platform Notifications (Application status changes, interview invites)<br>- Student Dashboard Analytics |
-| **RECRUITER** | - Recruiter Profile & Company Verification Request<br>- Company Profile Management (Logo, Description, Industry, Website)<br>- Job Posting with Required Skills & Minimum Proficiency Levels<br>- Applicant Screening & Candidate Compatibility Filtering<br>- Multi-Stage Application Pipeline Management (APPLIED → SHORTLISTED → INTERVIEW → SELECTED/REJECTED)<br>- Recruiter Recruitment Analytics Dashboard |
-| **ADMIN** | - Platform Management (User, Recruiter & Company moderation)<br>- Account Activation / Deactivation & Role Management<br>- Job Moderation & Flagging<br>- System-Wide Audit Log Inspection & System Notifications<br>- Platform KPI Analytics Dashboard |
+| **STUDENT** | - Professional Profile Management (Bio, Education, Experience, Skills, Certifications) with real-time completion % calculation.<br>- Multi-Resume Upload (Filesystem abstraction) with automatic active resume designation.<br>- Public Job Discovery with Dynamic Multi-Criteria Filtering & Sorting.<br>- Real-time Deterministic Skill-Matching Preview & Gap Breakdown.<br>- Job Bookmarking / Saved Jobs.<br>- Application Submission with Active Resume Fallback and Historical Score Snapshotting.<br>- Candidate Self-Withdrawal from early lifecycle states.<br>- Notification Inbox & Live Unread Counter. |
+| **RECRUITER** | - Recruiter Profile & Company Registration.<br>- Company Profile Management (Name, Description, Industry, Size, Location, Website, Logo).<br>- Job Posting with Required and Optional Skills with Minimum Proficiency Levels.<br>- Complete Job State Machine (`DRAFT` $\leftrightarrow$ `PUBLISHED` $\leftrightarrow$ `CLOSED` $\rightarrow$ `ARCHIVED`).<br>- Recruiter Applicant Tracking System (ATS) Pipeline (`APPLIED` $\rightarrow$ `UNDER_REVIEW` $\rightarrow$ `SHORTLISTED` $\rightarrow$ `INTERVIEW_SCHEDULED` $\rightarrow$ `ACCEPTED` / `REJECTED`).<br>- Interview Scheduling and Rescheduling with Future Timestamp Enforcement.<br>- Private Recruiter Evaluation Notes (`recruiterNotes`).<br>- Company-Scoped Candidate Resume Download. |
+| **ADMIN** | - System-wide seed accounts and role enforcement infrastructure (`ROLE_ADMIN`).<br>- Platform moderation and audit logging framework. |
 
 ---
 
@@ -24,63 +24,66 @@ CareerForge is an enterprise-ready career management and recruitment platform de
 
 ```mermaid
 graph TD
-    subgraph Client Layer [Frontend - React + TypeScript + Vite + Tailwind]
-        UI[User Interface / React Router]
-        Axios[Axios HTTP Client + Auth Interceptor]
-        State[React Context / Custom Hooks]
-        UI --> State
-        State --> Axios
+    subgraph Client Layer [Frontend / API Consumers]
+        UI[User Interface / React Application]
+        Axios[HTTP Client + JWT Bearer Interceptor]
+        UI --> Axios
     end
 
-    subgraph API Gateway / Security Layer
+    subgraph API Gateway & Security Layer [Spring Security 6]
         JWTFilter[JWT Authentication Filter]
-        SecConfig[Spring Security Config / RBAC]
-        Axios -->|HTTPS / REST API + JWT Bearer| JWTFilter
+        SecConfig[SecurityFilterChain / RBAC Rules]
+        Axios -->|REST API + Bearer Token| JWTFilter
         JWTFilter --> SecConfig
     end
 
-    subgraph Backend Application Layer [Spring Boot 3.x / Java 17+]
-        SecConfig --> AuthCtrl[Auth Controller]
-        SecConfig --> StudCtrl[Student Controller]
-        SecConfig --> RecCtrl[Recruiter Controller]
-        SecConfig --> JobCtrl[Job Controller]
-        SecConfig --> AppCtrl[Application Controller]
-        SecConfig --> NotifCtrl[Notification Controller]
-        SecConfig --> AdminCtrl[Admin Controller]
+    subgraph Backend Application Layer [Spring Boot 3.2.5 / Java 17]
+        SecConfig --> AuthCtrl[AuthController]
+        SecConfig --> StudCtrl[StudentController / StudentApplicationController / StudentSavedJobController]
+        SecConfig --> RecCtrl[RecruiterController / RecruiterApplicationController]
+        SecConfig --> CompCtrl[CompanyController]
+        SecConfig --> JobCtrl[JobController / Public Job Discovery]
+        SecConfig --> NotifCtrl[NotificationController]
 
-        AuthCtrl --> AuthService[Auth Service + Refresh Token Engine]
-        StudCtrl --> StudService[Student Service]
-        RecCtrl --> RecService[Recruiter Service]
-        JobCtrl --> JobService[Job Service]
-        AppCtrl --> AppService[Application Service]
-        NotifCtrl --> NotifService[Notification Service]
-        AdminCtrl --> AdminService[Admin Service]
+        AuthCtrl --> AuthService[AuthService + RefreshTokenService]
+        StudCtrl --> StudService[StudentProfileService]
+        StudCtrl --> AppService[ApplicationService]
+        StudCtrl --> SavedJobService[SavedJobService]
+        RecCtrl --> RecService[RecruiterProfileService]
+        RecCtrl --> AppService
+        CompCtrl --> CompService[CompanyService]
+        JobCtrl --> JobService[JobService]
+        NotifCtrl --> NotifService[NotificationService]
 
-        JobService --> MatchEngine[Skill Matching Engine - Configurable Strategy]
-        StudService --> StorageService[Storage Service Abstraction - Local File System]
+        AppService --> MatchEngine[SkillMatchingService]
+        AppService --> StorageService[StorageService Abstraction]
+        AppService --> NotifService[NotificationService Dispatcher]
+        StudService --> StorageService
     end
 
     subgraph Data & Storage Layer
         Repo[Spring Data JPA Repositories]
         Spec[JPA Specifications Layer]
+        
         AuthService --> Repo
         StudService --> Repo
         RecService --> Repo
+        CompService --> Repo
         JobService --> Repo
         AppService --> Repo
+        SavedJobService --> Repo
         NotifService --> Repo
-        AdminService --> Repo
+        JobService --> Spec
+        AppService --> Spec
 
-        Repo -->|JDBC / Connection Pool| MySQL[(MySQL Database)]
-        StorageService -->|File System| FileStorage[Local Disk Directory ./uploads/resumes/]
+        Repo -->|HikariCP / JDBC| MySQL[(MySQL Database / H2 Test DB)]
+        StorageService -->|Filesystem I/O| DiskStorage[Local Disk ./uploads/resumes/]
     end
 ```
 
 ---
 
-## 3. Database ER Design & Entity Schemas
-
-### 3.1 Entity Relationship Diagram
+## 3. Database Entity Relationship Diagram
 
 ```mermaid
 erDiagram
@@ -99,8 +102,7 @@ erDiagram
     JOB ||--o{ SAVED_JOB : "bookmarked by"
     STUDENT_PROFILE ||--o{ APPLICATION : "submits"
     JOB ||--o{ APPLICATION : "receives"
-    APPLICATION ||--o{ APPLICATION_STATUS_HISTORY : "tracks"
-    USER ||--o{ AUDIT_LOG : "triggers"
+    RESUME ||--o{ APPLICATION : "attached to"
 
     USER {
         bigint id PK
@@ -137,10 +139,13 @@ erDiagram
         string first_name
         string last_name
         string phone
-        string headline
-        text summary
+        string location
+        text bio
+        text education_summary
         string github_url
         string linkedin_url
+        string portfolio_url
+        int profile_completion_percentage
         datetime created_at
         datetime updated_at
     }
@@ -148,11 +153,14 @@ erDiagram
     COMPANY {
         bigint id PK
         string name UK
+        string slug UK
         string website
         string logo_url
         text description
         string industry
-        string status ENUM
+        string company_size
+        string location
+        string verification_status ENUM
         datetime created_at
         datetime updated_at
     }
@@ -161,7 +169,11 @@ erDiagram
         bigint id PK
         bigint user_id FK,UK
         bigint company_id FK
+        string first_name
+        string last_name
         string designation
+        string department
+        string phone
         boolean is_company_admin
         datetime created_at
         datetime updated_at
@@ -172,14 +184,18 @@ erDiagram
         bigint company_id FK
         bigint recruiter_id FK
         string title
+        string slug UK
         text description
         string location
+        string work_mode ENUM
         string job_type ENUM
         string experience_level ENUM
         decimal salary_min
         decimal salary_max
+        string currency
         string status ENUM
         datetime deadline
+        datetime published_at
         datetime created_at
         datetime updated_at
     }
@@ -192,7 +208,7 @@ erDiagram
 
     STUDENT_SKILL {
         bigint id PK
-        bigint student_id FK
+        bigint student_profile_id FK
         bigint skill_id FK
         string proficiency ENUM
     }
@@ -208,321 +224,136 @@ erDiagram
     APPLICATION {
         bigint id PK
         bigint job_id FK
-        bigint student_id FK
+        bigint student_profile_id FK
         bigint resume_id FK
         string status ENUM
-        decimal match_score
-        datetime applied_at
+        decimal match_score_at_application
+        text cover_letter
+        text recruiter_notes
+        datetime interview_scheduled_at
+        datetime reviewed_at
+        datetime withdrawn_at
+        datetime created_at
         datetime updated_at
     }
 
-    APPLICATION_STATUS_HISTORY {
+    SAVED_JOB {
         bigint id PK
-        bigint application_id FK
-        string status ENUM
-        string notes
-        bigint changed_by_user_id FK
+        bigint student_profile_id FK
+        bigint job_id FK
         datetime created_at
     }
 
     RESUME {
         bigint id PK
-        bigint student_id FK
-        string file_name
-        string file_path
-        string file_type
+        bigint student_profile_id FK
+        string original_file_name
+        string stored_file_name
+        string storage_path
+        string content_type
         bigint file_size
-        boolean is_primary
+        int version
+        boolean is_active
         datetime uploaded_at
     }
 ```
 
-### 3.2 Key Database Entity Definitions
-
-1. **`users`**:
-   - `id` BIGINT AUTO_INCREMENT PRIMARY KEY
-   - `email` VARCHAR(150) NOT NULL UNIQUE
-   - `password_hash` VARCHAR(255) NOT NULL
-   - `role` VARCHAR(20) NOT NULL (`ROLE_STUDENT`, `ROLE_RECRUITER`, `ROLE_ADMIN`)
-   - `enabled` BOOLEAN NOT NULL DEFAULT TRUE
-   - `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP, `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-   - *Indexes*: `idx_users_email` (`email`), `idx_users_role` (`role`)
-
-2. **`refresh_tokens`**:
-   - `id` BIGINT AUTO_INCREMENT PRIMARY KEY
-   - `user_id` BIGINT NOT NULL, FK -> `users(id)` ON DELETE CASCADE
-   - `token` VARCHAR(255) NOT NULL UNIQUE
-   - `expiry_date` TIMESTAMP NOT NULL
-   - `revoked` BOOLEAN NOT NULL DEFAULT FALSE
-   - `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-   - *Indexes*: `idx_ref_token` (`token`), `idx_ref_token_user` (`user_id`)
-
-3. **`notifications`**:
-   - `id` BIGINT AUTO_INCREMENT PRIMARY KEY
-   - `user_id` BIGINT NOT NULL, FK -> `users(id)` ON DELETE CASCADE
-   - `title` VARCHAR(150) NOT NULL
-   - `message` TEXT NOT NULL
-   - `type` VARCHAR(50) NOT NULL (`APPLICATION_UPDATE`, `SYSTEM_ALERT`, `INTERVIEW_INVITE`, `JOB_RECOMMENDATION`)
-   - `is_read` BOOLEAN NOT NULL DEFAULT FALSE
-   - `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-   - *Indexes*: `idx_notif_user` (`user_id`), `idx_notif_read` (`is_read`)
-
 ---
 
-## 4. Backend Package Architecture (Spring Boot)
+## 4. State Machines & Lifecycle Blueprints
 
+### 4.1 Job Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT : Create Job
+    DRAFT --> PUBLISHED : Publish (requires skills & valid deadline)
+    PUBLISHED --> DRAFT : Unpublish (pause applications)
+    PUBLISHED --> CLOSED : Close (stop accepting applications)
+    CLOSED --> PUBLISHED : Reopen
+    DRAFT --> ARCHIVED : Archive
+    CLOSED --> ARCHIVED : Archive
+    ARCHIVED --> [*]
 ```
-com.careerforge
-├── CareerForgeApplication.java
-├── config
-│   ├── ApplicationConfig.java
-│   ├── SecurityConfig.java
-│   ├── JwtConfigProperties.java
-│   ├── MatchingConfigProperties.java
-│   ├── StorageConfigProperties.java
-│   └── WebMvcConfig.java
-├── controller
-│   ├── AuthController.java
-│   ├── StudentController.java
-│   ├── RecruiterController.java
-│   ├── CompanyController.java
-│   ├── JobController.java
-│   ├── ApplicationController.java
-│   ├── ResumeController.java
-│   ├── SkillController.java
-│   ├── NotificationController.java
-│   ├── RecommendationController.java
-│   ├── AnalyticsController.java
-│   └── AdminController.java
-├── dto
-│   ├── request
-│   │   ├── RegisterRequest.java
-│   │   ├── LoginRequest.java
-│   │   ├── RefreshTokenRequest.java
-│   │   ├── StudentProfileUpdateRequest.java
-│   │   ├── CompanyRequest.java
-│   │   ├── JobCreateUpdateRequest.java
-│   │   ├── ApplicationStatusChangeRequest.java
-│   │   └── SkillRequest.java
-│   └── response
-│       ├── ApiResponse.java
-│       ├── PagedResponse.java
-│       ├── AuthResponse.java
-│       ├── TokenRefreshResponse.java
-│       ├── UserResponse.java
-│       ├── NotificationResponse.java
-│       ├── StudentProfileResponse.java
-│       ├── RecruiterProfileResponse.java
-│       ├── CompanyResponse.java
-│       ├── JobResponse.java
-│       ├── ApplicationResponse.java
-│       ├── MatchScoreResponse.java
-│       ├── SkillGapResponse.java
-│       └── AnalyticsResponse.java
-├── entity
-│   ├── BaseEntity.java
-│   ├── User.java
-│   ├── RefreshToken.java
-│   ├── Notification.java
-│   ├── StudentProfile.java
-│   ├── RecruiterProfile.java
-│   ├── Company.java
-│   ├── Job.java
-│   ├── Skill.java
-│   ├── StudentSkill.java
-│   ├── JobSkill.java
-│   ├── Application.java
-│   ├── ApplicationStatusHistory.java
-│   ├── Resume.java
-│   ├── SavedJob.java
-│   ├── AuditLog.java
-│   └── enums
-│       ├── Role.java
-│       ├── CompanyStatus.java
-│       ├── JobStatus.java
-│       ├── JobType.java
-│       ├── ExperienceLevel.java
-│       ├── SkillProficiency.java
-│       ├── ApplicationStatus.java
-│       └── NotificationType.java
-├── exception
-│   ├── GlobalExceptionHandler.java
-│   ├── ResourceNotFoundException.java
-│   ├── BadRequestException.java
-│   ├── UnauthorizedException.java
-│   ├── TokenRefreshException.java
-│   ├── DuplicateResourceException.java
-│   └── FileStorageException.java
-├── mapper
-│   ├── UserMapper.java
-│   ├── StudentMapper.java
-│   ├── RecruiterMapper.java
-│   ├── CompanyMapper.java
-│   ├── JobMapper.java
-│   ├── ApplicationMapper.java
-│   └── NotificationMapper.java
-├── repository
-│   ├── UserRepository.java
-│   ├── RefreshTokenRepository.java
-│   ├── NotificationRepository.java
-│   ├── StudentProfileRepository.java
-│   ├── RecruiterProfileRepository.java
-│   ├── CompanyRepository.java
-│   ├── JobRepository.java
-│   ├── SkillRepository.java
-│   ├── StudentSkillRepository.java
-│   ├── JobSkillRepository.java
-│   ├── ApplicationRepository.java
-│   ├── ApplicationStatusHistoryRepository.java
-│   ├── ResumeRepository.java
-│   ├── SavedJobRepository.java
-│   └── AuditLogRepository.java
-├── security
-│   ├── CustomUserDetailsService.java
-│   ├── JwtTokenProvider.java
-│   ├── JwtAuthenticationFilter.java
-│   ├── JwtAuthenticationEntryPoint.java
-│   └── UserPrincipal.java
-├── service
-│   ├── AuthService.java
-│   ├── RefreshTokenService.java
-│   ├── StudentService.java
-│   ├── RecruiterService.java
-│   ├── CompanyService.java
-│   ├── JobService.java
-│   ├── ApplicationService.java
-│   ├── NotificationService.java
-│   ├── SkillMatchingService.java
-│   ├── StorageService.java
-│   ├── AnalyticsService.java
-│   ├── AuditLogService.java
-│   └── impl
-│       ├── AuthServiceImpl.java
-│       ├── RefreshTokenServiceImpl.java
-│       ├── StudentServiceImpl.java
-│       ├── RecruiterServiceImpl.java
-│       ├── CompanyServiceImpl.java
-│       ├── JobServiceImpl.java
-│       ├── ApplicationServiceImpl.java
-│       ├── NotificationServiceImpl.java
-│       ├── SkillMatchingServiceImpl.java
-│       ├── LocalStorageServiceImpl.java
-│       ├── AnalyticsServiceImpl.java
-│       └── AuditLogServiceImpl.java
-├── specification
-│   ├── JobSpecification.java
-│   └── ApplicationSpecification.java
-└── util
-    ├── AppConstants.java
-    └── SecurityUtils.java
+
+### 4.2 Application Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> APPLIED : Candidate submits application
+
+    APPLIED --> UNDER_REVIEW : Recruiter opens / reviews (sets reviewedAt)
+    APPLIED --> WITHDRAWN : Candidate withdraws
+
+    UNDER_REVIEW --> SHORTLISTED : Recruiter shortlists
+    UNDER_REVIEW --> WITHDRAWN : Candidate withdraws
+
+    SHORTLISTED --> INTERVIEW_SCHEDULED : Recruiter schedules interview (future date)
+    SHORTLISTED --> REJECTED : Recruiter declines
+
+    INTERVIEW_SCHEDULED --> INTERVIEW_SCHEDULED : Recruiter reschedules (future date)
+    INTERVIEW_SCHEDULED --> ACCEPTED : Recruiter extends offer
+    INTERVIEW_SCHEDULED --> REJECTED : Recruiter declines
+
+    ACCEPTED --> [*] : Terminal State
+    REJECTED --> [*] : Terminal State
+    WITHDRAWN --> [*] : Terminal State
 ```
 
 ---
 
-## 5. REST API Endpoint Specification (Authentication & Refresh Tokens)
+## 5. Skill Matching Engine Specification
 
-### 5.1 Authentication Module (`/api/v1/auth`)
-- `POST /api/v1/auth/register` — Register new user (Student / Recruiter). Response: `AuthResponse (accessToken, refreshToken, userDetails)`.
-- `POST /api/v1/auth/login` — Authenticate user credentials. Response: `AuthResponse (accessToken, refreshToken, userDetails)`.
-- `POST /api/v1/auth/refresh` — Refresh short-lived JWT access token using valid refresh token. Request: `RefreshTokenRequest`. Response: `TokenRefreshResponse`.
-- `POST /api/v1/auth/logout` — Revoke active refresh token.
-- `GET /api/v1/auth/me` — Fetch current authenticated user info.
-
-### 5.2 Student Module (`/api/v1/students` — Role: `ROLE_STUDENT`)
-- **Profile Management**:
-  - `GET /api/v1/students/profile` — Get profile of authenticated student with server-calculated completion %.
-  - `POST /api/v1/students/profile` — Create student profile.
-  - `PUT /api/v1/students/profile` — Update student profile.
-- **Skills Management**:
-  - `GET /api/v1/students/skills` — List student skills and proficiencies.
-  - `POST /api/v1/students/skills` — Add skill (duplicate-protected).
-  - `PUT /api/v1/students/skills/{skillId}` — Update skill proficiency (`BEGINNER`, `INTERMEDIATE`, `ADVANCED`, `EXPERT`).
-  - `DELETE /api/v1/students/skills/{skillId}` — Remove skill from student profile.
-- **Education Management**:
-  - `GET /api/v1/students/education` — List education history.
-  - `POST /api/v1/students/education` — Add education record.
-  - `PUT /api/v1/students/education/{id}` — Update education record (ownership-scoped).
-  - `DELETE /api/v1/students/education/{id}` — Delete education record (ownership-scoped).
-- **Projects Management**:
-  - `GET /api/v1/students/projects` — List project records.
-  - `POST /api/v1/students/projects` — Add project record.
-  - `PUT /api/v1/students/projects/{id}` — Update project record (ownership-scoped).
-  - `DELETE /api/v1/students/projects/{id}` — Delete project record (ownership-scoped).
-- **Certifications Management**:
-  - `GET /api/v1/students/certifications` — List certification records.
-  - `POST /api/v1/students/certifications` — Add certification record.
-  - `PUT /api/v1/students/certifications/{id}` — Update certification record (ownership-scoped).
-  - `DELETE /api/v1/students/certifications/{id}` — Delete certification record (ownership-scoped).
-- **Resume Management**:
-  - `POST /api/v1/students/resumes` — Upload PDF resume (MIME/ext/size validated, stored on filesystem).
-  - `GET /api/v1/students/resumes` — List resume metadata (no binary content in DB).
-  - `GET /api/v1/students/resumes/{id}/download` — Stream/download resume binary PDF.
-  - `PUT /api/v1/students/resumes/{id}/active` — Set active resume.
-  - `DELETE /api/v1/students/resumes/{id}` — Delete resume from disk and database.
-
-### 5.3 Recruiter & Company Module (`/api/v1/recruiters`, `/api/v1/companies`)
-- **Recruiter Profile**:
-  - `GET /api/v1/recruiters/profile` — Get recruiter profile (`ROLE_RECRUITER`).
-  - `POST /api/v1/recruiters/profile` — Create initial recruiter profile (`ROLE_RECRUITER`).
-  - `PUT /api/v1/recruiters/profile` — Update recruiter profile (`ROLE_RECRUITER`).
-- **Company Management**:
-  - `POST /api/v1/companies` — Register company and set recruiter as company admin (`ROLE_RECRUITER`).
-  - `GET /api/v1/companies/my-company` — Get recruiter's affiliated company (`ROLE_RECRUITER`).
-  - `PUT /api/v1/companies/my-company` — Update company profile (`ROLE_RECRUITER`, admin checked).
-  - `GET /api/v1/companies/{id}` — Public company profile (`PERMIT_ALL`).
-  - `GET /api/v1/companies/slug/{slug}` — Public company profile by slug (`PERMIT_ALL`).
-  - `GET /api/v1/companies` — Public verified companies directory with pagination (`PERMIT_ALL`).
-
-### 5.4 Job Management & Lifecycle State Machine (`/api/v1/recruiters/jobs` — Role: `ROLE_RECRUITER`)
-- `POST /api/v1/recruiters/jobs` — Create job posting draft with required & optional skills.
-- `GET /api/v1/recruiters/jobs` — List company jobs with status filtering & pagination.
-- `GET /api/v1/recruiters/jobs/{id}` — Full company job details with skills.
-- `PUT /api/v1/recruiters/jobs/{id}` — Update company job & required skills.
-- `PATCH /api/v1/recruiters/jobs/{id}/publish` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `PUBLISHED` (requires skills & future deadline).
-- `PATCH /api/v1/recruiters/jobs/{id}/unpublish` — Transition `PUBLISHED` $\rightarrow$ `DRAFT` (pause job).
-- `PATCH /api/v1/recruiters/jobs/{id}/close` — Transition `PUBLISHED` $\rightarrow$ `CLOSED` (stop accepting applications).
-- `PATCH /api/v1/recruiters/jobs/{id}/reopen` — Transition `CLOSED` $\rightarrow$ `PUBLISHED` (re-open job).
-- `PATCH /api/v1/recruiters/jobs/{id}/archive` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED`.
-- `DELETE /api/v1/recruiters/jobs/{id}` — Delete job (`DRAFT` or `ARCHIVED` only).
-
-### 5.5 Candidate & Public Job Discovery (`/api/v1/jobs` — Role: `PERMIT_ALL`)
-- `GET /api/v1/jobs` — Dynamic multi-criteria search across `PUBLISHED` jobs using JPA Specifications (keyword, location, workMode, jobType, experienceLevel, salary range, skills, companyId, pagination, sorting).
-- `GET /api/v1/jobs/{id}` — View single published job details and required skills.
-- `GET /api/v1/jobs/slug/{slug}` — View single published job details by slug.
-
----
-
-## 6. Configurable & Testable Skill-Matching Algorithm
-
-The skill-matching calculation is isolated in `SkillMatchingServiceImpl` and injected with `MatchingConfigProperties` (configured via `application.yml` / env vars):
-
-```yaml
-careerforge:
-  matching:
-    required-skill-weight: 2.0
-    optional-skill-weight: 1.0
-    proficiency-weight-multiplier: 1.0
-```
+The skill-matching engine (`SkillMatchingServiceImpl`) computes deterministic, multi-factor compatibility between candidate profiles and job requirements.
 
 ### Formula
-$$\text{Compatibility Score } (S) = \left( \frac{\sum_{k \in S_C \cap S_J} (W_k \times \mu_k)}{\sum_{k \in S_J} W_k} \right) \times 100$$
+$$\text{Score} = \left( \frac{\sum_{k \in \text{Job Skills}} (W_k \times \mu_k)}{\sum_{j \in \text{Job Skills}} W_j} \right) \times 100$$
 
-Where $\mu_k = \min\left(1.0, \frac{\text{Candidate Proficiency}}{\text{Job Required Proficiency}}\right)$.
-
----
-
-## 7. Development Seed Data Specification
-
-During local development setup, if the database has zero records, `DataInitializer` populates:
-1. **Sample Skills**: Java, Spring Boot, React, TypeScript, MySQL, Docker, REST API, Git, Python, Microservices.
-2. **Development Seed Accounts** (Clearly tagged as dev-only, BCrypt hashed):
-   - **Admin**: `admin@careerforge.local` / `DevPass123!` (Role: `ROLE_ADMIN`)
-   - **Recruiter**: `recruiter@careerforge.local` / `DevPass123!` (Role: `ROLE_RECRUITER`)
-   - **Student**: `student@careerforge.local` / `DevPass123!` (Role: `ROLE_STUDENT`)
-
-> [!WARNING]
-> Seeded passwords are strictly marked as development-only and are prohibited from use in production environments.
+### Weighting & Scaling Rules
+- **Required Skill Weight ($W_{\text{req}}$)**: `2.0`
+- **Optional Skill Weight ($W_{\text{opt}}$)**: `1.0`
+- **Proficiency Levels**: `BEGINNER` = 1, `INTERMEDIATE` = 2, `ADVANCED` = 3, `EXPERT` = 4
+- **Proficiency Multiplier ($\mu_k$)**:
+  $$\mu_k = \min\left(1.0, \frac{\text{Student Proficiency}}{\text{Job Required Proficiency}}\right)$$
+  *(If student does not have skill $k$, $\mu_k = 0.0$)*
+- **Eligibility Threshold Rule**:
+  $$\text{Eligible} = (\text{Score} \ge 50.00\%) \land (\text{Total Required Skills} == 0 \lor \text{Matched Required Skills} \ge 1)$$
+- **Boundary Handling**:
+  - Zero-skill job $\rightarrow$ `100.00%`, `eligible = true`
+  - Zero-skill candidate $\rightarrow$ `0.00%`, `eligible = false`
+- **Rounding**: `BigDecimal` scaled to 2 decimal places with `RoundingMode.HALF_UP`.
 
 ---
 
-**End of Document**
+## 6. Security, RBAC & Cross-Tenant Ownership Boundaries
+
+1. **Authentication Principle**:
+   - Stateless JWT authentication via `JwtAuthenticationFilter`.
+   - Security principal resolved as `UserPrincipal` containing `id`, `email`, and `authorities`.
+2. **Student Ownership Isolation**:
+   - Student profile, sub-resources, applications, bookmarks, and notifications are filtered strictly by `user_id` or `student_profile_id`.
+   - Unauthorized cross-student access throws `ResourceNotFoundException` $\rightarrow$ mapped to **`404 Not Found`** by `GlobalExceptionHandler`.
+3. **Recruiter Cross-Company Isolation**:
+   - Recruiter operations (job management, applicant listing, dossier inspection, status updates, evaluation notes, resume streaming) verify:
+     $$\text{application.job.company.id} == \text{recruiter.company.id}$$
+   - Attempted access across company boundaries returns **`404 Not Found`** to completely mask existence and prevent ID enumeration.
+4. **Internal Evaluation Notes Privacy**:
+   - `recruiterNotes` is strictly excluded from all student-facing DTOs (`StudentApplicationResponse`, `StudentApplicationDetailResponse`) and platform notifications.
+
+---
+
+## 7. Performance & N+1 Prevention Strategy
+
+1. **Job Discovery**: `JobSpecification` dynamically joins search criteria while skills for all returned jobs on the page are batch-fetched in a single query via `JobSkillRepository.findAllByJob_IdInWithSkill(jobIds)`.
+2. **Saved Jobs**: `SavedJobRepository.findAllByStudentProfile_Id` uses `@EntityGraph(attributePaths = {"job", "job.company"})` and batch-loads skills via `JobSkillRepository`.
+3. **Student Applications**: `ApplicationRepository.findAllByStudentProfile_Id` uses `@EntityGraph(attributePaths = {"job", "job.company", "resume"})`.
+4. **Recruiter Applicant Tracking**: Detail queries utilize eager EntityGraphs `attributePaths = {"job", "job.company", "resume", "studentProfile", "studentProfile.user"}`.
+5. **Skill Matching Engine**: `StudentSkillRepository` and `JobSkillRepository` use `JOIN FETCH js.skill` to load all skills in 2 single queries total.
+
+---
+
+## 8. Integration Testing Architecture
+
+- **Test Suite Location**: `src/test/java/com/careerforge/integration/Phase4EndToEndWorkflowIntegrationTest.java`
+- **Total Baseline Tests**: **103 Automated Tests** across unit, controller, integration, and E2E tiers.
+- **Coverage**: 100% of the cross-module journey (Student registration $\rightarrow$ Profile setup $\rightarrow$ Recruiter company/job creation $\rightarrow$ Public discovery $\rightarrow$ Skill matching $\rightarrow$ Application submission $\rightarrow$ Snapshot score $\rightarrow$ ATS state machine $\rightarrow$ Interview scheduling $\rightarrow$ Resume streaming $\rightarrow$ Notifications $\rightarrow$ Saved jobs $\rightarrow$ Cross-tenant security isolation).
