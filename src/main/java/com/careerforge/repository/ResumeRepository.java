@@ -18,6 +18,8 @@ public interface ResumeRepository extends JpaRepository<Resume, Long> {
 
     Optional<Resume> findByIdAndStudentProfile(Long id, StudentProfile profile);
 
+    Optional<Resume> findByStudentProfileAndIsActiveTrue(StudentProfile profile);
+
     long countByStudentProfile(StudentProfile profile);
 
     long countByStudentProfileAndIsActiveTrue(StudentProfile profile);
