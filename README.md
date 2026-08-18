@@ -13,9 +13,10 @@ CareerForge is a production-grade full-stack recruitment and career management p
 
 - **Backend Framework**: Java 17, Spring Boot 3.2.5, Spring MVC, Spring Data JPA, Hibernate
 - **Security & Auth**: Spring Security 6, JWT (Access Tokens + Refresh Tokens), BCrypt Password Hashing, Role-Based Access Control (`ROLE_STUDENT`, `ROLE_RECRUITER`, `ROLE_ADMIN`)
-- **Database**: MySQL 8.0 with JPA Auditing & Indexing
+- **Database**: MySQL 8.0 with JPA Auditing, Compound Indexing, and JPA Specifications
 - **Validation & Exception Handling**: Bean Validation (`@Valid`), Custom `@RestControllerAdvice` Global Exception Handler with unified `ApiResponse<T>` and `ErrorResponse` wrappers
 - **File Storage**: StorageService abstraction (`LocalStorageServiceImpl` for development, isolated from MySQL)
+- **Job Discovery**: Dynamic multi-criteria search with Spring Data JPA Specifications and N+1 query prevention
 
 ---
 
@@ -46,7 +47,7 @@ Ensure MySQL is running. The application will automatically attempt to create `c
 
 ### Step 2: Build & Run Backend
 ```bash
-# Clean & run test suite (Phase 1 + Phase 2)
+# Clean & run full test suite (Phase 1 + Phase 2 + Phase 3)
 ./tools/apache-maven-3.9.9/bin/mvn.cmd clean test
 
 # Run Spring Boot Application
@@ -78,39 +79,47 @@ Upon startup, `DataInitializer` populates standard technical skills and 3 develo
 - `GET /api/v1/auth/me` — Authenticated User Profile metadata
 
 ### 2. Student Module (Phase 2 — requires `ROLE_STUDENT`)
-
-#### Profile
-- `GET /api/v1/students/profile` — Get authenticated student's profile & completion percentage
+- `GET /api/v1/students/profile` — Get authenticated student's profile & completion %
 - `POST /api/v1/students/profile` — Create student profile
 - `PUT /api/v1/students/profile` — Update student profile
-
-#### Skills
-- `GET /api/v1/students/skills` — List student's skills and proficiency levels
-- `POST /api/v1/students/skills` — Add a skill to student profile (duplicate protected)
-- `PUT /api/v1/students/skills/{skillId}` — Update skill proficiency (`BEGINNER`, `INTERMEDIATE`, `ADVANCED`, `EXPERT`)
+- `GET /api/v1/students/skills` — List student skills and proficiencies
+- `POST /api/v1/students/skills` — Add skill to profile (duplicate protected)
+- `PUT /api/v1/students/skills/{skillId}` — Update skill proficiency
 - `DELETE /api/v1/students/skills/{skillId}` — Remove skill from profile
-
-#### Education
-- `GET /api/v1/students/education` — List education history
-- `POST /api/v1/students/education` — Add education record
-- `PUT /api/v1/students/education/{id}` — Update education record (ownership enforced)
-- `DELETE /api/v1/students/education/{id}` — Delete education record (ownership enforced)
-
-#### Projects
-- `GET /api/v1/students/projects` — List student projects
-- `POST /api/v1/students/projects` — Add project record
-- `PUT /api/v1/students/projects/{id}` — Update project record (ownership enforced)
-- `DELETE /api/v1/students/projects/{id}` — Delete project record (ownership enforced)
-
-#### Certifications
-- `GET /api/v1/students/certifications` — List certifications
-- `POST /api/v1/students/certifications` — Add certification record
-- `PUT /api/v1/students/certifications/{id}` — Update certification record (ownership enforced)
-- `DELETE /api/v1/students/certifications/{id}` — Delete certification record (ownership enforced)
-
-#### Resumes
-- `POST /api/v1/students/resumes` — Upload PDF resume (`multipart/form-data`, max 5MB)
-- `GET /api/v1/students/resumes` — List uploaded resumes metadata
+- `GET/POST /api/v1/students/education` — Education management
+- `PUT/DELETE /api/v1/students/education/{id}` — Education item modification (ownership enforced)
+- `GET/POST /api/v1/students/projects` — Projects management
+- `PUT/DELETE /api/v1/students/projects/{id}` — Project item modification (ownership enforced)
+- `GET/POST /api/v1/students/certifications` — Certifications management
+- `PUT/DELETE /api/v1/students/certifications/{id}` — Certification item modification (ownership enforced)
+- `POST /api/v1/students/resumes` — Upload PDF resume (MIME/ext/size validated, stored on filesystem)
+- `GET /api/v1/students/resumes` — List resume metadata
 - `GET /api/v1/students/resumes/{id}/download` — Download resume binary PDF
 - `PUT /api/v1/students/resumes/{id}/active` — Set resume as active
 - `DELETE /api/v1/students/resumes/{id}` — Delete resume from disk and database
+
+### 3. Recruiter Profile & Company Module (Phase 3)
+- `GET/POST/PUT /api/v1/recruiters/profile` — Recruiter profile management (`ROLE_RECRUITER`)
+- `POST /api/v1/companies` — Register hiring company (`ROLE_RECRUITER`, creator becomes company admin)
+- `GET /api/v1/companies/my-company` — View recruiter's affiliated company (`ROLE_RECRUITER`)
+- `PUT /api/v1/companies/my-company` — Update company profile (`ROLE_RECRUITER`, admin checked)
+- `GET /api/v1/companies/{id}` — View public company profile (`PERMIT_ALL`)
+- `GET /api/v1/companies/slug/{slug}` — View public company profile by slug (`PERMIT_ALL`)
+- `GET /api/v1/companies` — Browse/search verified companies directory with pagination (`PERMIT_ALL`)
+
+### 4. Recruiter Job Management & State Machine (Phase 3 — requires `ROLE_RECRUITER`)
+- `POST /api/v1/recruiters/jobs` — Create job posting draft with required/optional skills
+- `GET /api/v1/recruiters/jobs` — List company jobs with status filtering & pagination
+- `GET /api/v1/recruiters/jobs/{id}` — Get complete company job details (ownership enforced)
+- `PUT /api/v1/recruiters/jobs/{id}` — Update company job & required skills (ownership enforced)
+- `PATCH /api/v1/recruiters/jobs/{id}/publish` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `PUBLISHED`
+- `PATCH /api/v1/recruiters/jobs/{id}/unpublish` — Transition `PUBLISHED` $\rightarrow$ `DRAFT`
+- `PATCH /api/v1/recruiters/jobs/{id}/close` — Transition `PUBLISHED` $\rightarrow$ `CLOSED`
+- `PATCH /api/v1/recruiters/jobs/{id}/reopen` — Transition `CLOSED` $\rightarrow$ `PUBLISHED`
+- `PATCH /api/v1/recruiters/jobs/{id}/archive` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED`
+- `DELETE /api/v1/recruiters/jobs/{id}` — Delete job (`DRAFT` or `ARCHIVED` only)
+
+### 5. Candidate & Public Job Discovery (Phase 3 — `PERMIT_ALL`)
+- `GET /api/v1/jobs` — Dynamic multi-criteria job search (keyword, location, workMode, jobType, experienceLevel, salaryMin, salaryMax, skillIds, companyId, pagination, sorting)
+- `GET /api/v1/jobs/{id}` — Get single published job details + required skills
+- `GET /api/v1/jobs/slug/{slug}` — Get single published job details by slug

@@ -460,6 +460,36 @@ com.careerforge
   - `PUT /api/v1/students/resumes/{id}/active` — Set active resume.
   - `DELETE /api/v1/students/resumes/{id}` — Delete resume from disk and database.
 
+### 5.3 Recruiter & Company Module (`/api/v1/recruiters`, `/api/v1/companies`)
+- **Recruiter Profile**:
+  - `GET /api/v1/recruiters/profile` — Get recruiter profile (`ROLE_RECRUITER`).
+  - `POST /api/v1/recruiters/profile` — Create initial recruiter profile (`ROLE_RECRUITER`).
+  - `PUT /api/v1/recruiters/profile` — Update recruiter profile (`ROLE_RECRUITER`).
+- **Company Management**:
+  - `POST /api/v1/companies` — Register company and set recruiter as company admin (`ROLE_RECRUITER`).
+  - `GET /api/v1/companies/my-company` — Get recruiter's affiliated company (`ROLE_RECRUITER`).
+  - `PUT /api/v1/companies/my-company` — Update company profile (`ROLE_RECRUITER`, admin checked).
+  - `GET /api/v1/companies/{id}` — Public company profile (`PERMIT_ALL`).
+  - `GET /api/v1/companies/slug/{slug}` — Public company profile by slug (`PERMIT_ALL`).
+  - `GET /api/v1/companies` — Public verified companies directory with pagination (`PERMIT_ALL`).
+
+### 5.4 Job Management & Lifecycle State Machine (`/api/v1/recruiters/jobs` — Role: `ROLE_RECRUITER`)
+- `POST /api/v1/recruiters/jobs` — Create job posting draft with required & optional skills.
+- `GET /api/v1/recruiters/jobs` — List company jobs with status filtering & pagination.
+- `GET /api/v1/recruiters/jobs/{id}` — Full company job details with skills.
+- `PUT /api/v1/recruiters/jobs/{id}` — Update company job & required skills.
+- `PATCH /api/v1/recruiters/jobs/{id}/publish` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `PUBLISHED` (requires skills & future deadline).
+- `PATCH /api/v1/recruiters/jobs/{id}/unpublish` — Transition `PUBLISHED` $\rightarrow$ `DRAFT` (pause job).
+- `PATCH /api/v1/recruiters/jobs/{id}/close` — Transition `PUBLISHED` $\rightarrow$ `CLOSED` (stop accepting applications).
+- `PATCH /api/v1/recruiters/jobs/{id}/reopen` — Transition `CLOSED` $\rightarrow$ `PUBLISHED` (re-open job).
+- `PATCH /api/v1/recruiters/jobs/{id}/archive` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED`.
+- `DELETE /api/v1/recruiters/jobs/{id}` — Delete job (`DRAFT` or `ARCHIVED` only).
+
+### 5.5 Candidate & Public Job Discovery (`/api/v1/jobs` — Role: `PERMIT_ALL`)
+- `GET /api/v1/jobs` — Dynamic multi-criteria search across `PUBLISHED` jobs using JPA Specifications (keyword, location, workMode, jobType, experienceLevel, salary range, skills, companyId, pagination, sorting).
+- `GET /api/v1/jobs/{id}` — View single published job details and required skills.
+- `GET /api/v1/jobs/slug/{slug}` — View single published job details by slug.
+
 ---
 
 ## 6. Configurable & Testable Skill-Matching Algorithm
