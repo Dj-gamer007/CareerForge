@@ -4,9 +4,9 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Security](https://img.shields.io/badge/Spring%20Security-JWT%20RBAC-blue.svg)](https://spring.io/projects/spring-security)
 [![Database](https://img.shields.io/badge/Database-MySQL%208.0-blue.svg)](https://www.mysql.com/)
-[![Tests](https://img.shields.io/badge/Tests-103%20Passed-success.svg)](https://github.com/)
+[![Tests](https://img.shields.io/badge/Tests-200%20Passed-success.svg)](https://github.com/)
 
-CareerForge is a production-grade full-stack recruitment and career management platform built with Java 17, Spring Boot 3.x, MySQL, and modern security patterns. The system connects students and recruiters through an intelligent, deterministic skill-matching engine, automated applicant tracking (ATS), job lifecycle state machines, resume storage abstractions, and real-time platform notifications.
+CareerForge is an enterprise-grade full-stack recruitment and career management platform built with Java 17, Spring Boot 3.x, MySQL, and modern security patterns. The system connects students and recruiters through an intelligent, deterministic skill-matching engine, automated applicant tracking (ATS), job lifecycle state machines, resume storage abstractions, real-time platform notifications, administrative governance, company verification, content moderation, append-only security audit trails, and high-performance database-aggregated platform analytics.
 
 ---
 
@@ -19,6 +19,7 @@ CareerForge is a production-grade full-stack recruitment and career management p
 - **Storage Abstraction**: `StorageService` interface (`LocalStorageServiceImpl` for local development, isolated from database metadata)
 - **Deterministic Skill-Matching Engine**: Multi-factor candidate-job compatibility scoring with weighted required/optional skills, proficiency scaling, and threshold eligibility rules
 - **Applicant Tracking System (ATS)**: Multi-stage application pipeline with strict state machine transitions, interview scheduling/rescheduling, recruiter evaluation notes, and candidate resume streaming
+- **Administrative Governance & Operations**: Admin RBAC, user management with self-disablement protection, company verification lifecycle, job content moderation, append-only audit trail with `Propagation.REQUIRES_NEW` transaction isolation, and server-side platform analytics engine
 
 ---
 
@@ -39,10 +40,10 @@ CareerForge is a production-grade full-stack recruitment and career management p
 - Hiring company registration with automatic recruiter-admin assignment.
 - Verified company directory search and public profile discovery.
 - Comprehensive **Job Lifecycle State Machine**:
-  - `DRAFT` $\rightarrow$ `PUBLISHED` (requires minimum skills & valid future deadline)
+  - `DRAFT` $\rightarrow$ `PUBLISHED` (requires minimum skills, valid future deadline, and verified company)
   - `PUBLISHED` $\rightarrow$ `DRAFT` (pause/unpublish)
   - `PUBLISHED` $\rightarrow$ `CLOSED` (stop accepting applications)
-  - `CLOSED` $\rightarrow$ `PUBLISHED` (reopen job)
+  - `CLOSED` $\rightarrow$ `PUBLISHED` (reopen job; requires verified company)
   - `DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED`
 - Dynamic multi-criteria public job discovery using JPA Specifications with batched skill loading.
 - Cross-company ownership isolation preventing recruiters from viewing or mutating jobs posted by another company.
@@ -58,7 +59,7 @@ CareerForge is a production-grade full-stack recruitment and career management p
 
 ### 5. Notifications & Saved Jobs (Phase 4C)
 - User notification inbox with unread count tracking (`/api/v1/notifications/unread-count`).
-- Real-time notification dispatch on application submission, status transitions, and interview invitations.
+- Real-time notification dispatch on application submission, status transitions, interview invitations, company verification decisions, and job moderation actions.
 - Bulk and single mark-as-read endpoints with strict user scoping.
 - Student saved jobs/bookmarks ecosystem with duplicate prevention and batched skill retrieval.
 
@@ -75,6 +76,26 @@ CareerForge is a production-grade full-stack recruitment and career management p
 - Recruiter internal evaluation notes (`recruiterNotes`) kept strictly private from candidate responses.
 - Secure recruiter candidate resume download restricted to the hiring company.
 - Multi-criteria applicant search via `ApplicationSpecification` (jobId, companyId, status, minScore, maxScore, candidate search).
+
+### 7. Administrative Governance & Operations (Phase 5)
+- **Admin User Management & RBAC Foundation (Phase 5A)**:
+  - Paginated user directory with multi-criteria filtering (`search`, `role`, `enabled`, date ranges).
+  - Deep user inspection with profile aggregation (`AdminUserDetailResponse`).
+  - Account status management (`enable`/`disable`) with mandatory reason and strict self-disablement protection.
+  - Authentication-level enforcement of disabled accounts across login and active JWT validation.
+- **Company Verification & Job Moderation (Phase 5B)**:
+  - Company verification state machine (`PENDING` $\leftrightarrow$ `VERIFIED` $\leftrightarrow$ `REJECTED`) with mandatory administrative reason and recruiter notification dispatch.
+  - Job moderation state machine (`PUBLISHED` $\rightarrow$ `CLOSED` [force-close], `PUBLISHED`/`DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED` [force-archive], `CLOSED`/`ARCHIVED` $\rightarrow$ `DRAFT` [return for correction]).
+  - Verification guard blocking recruiters of unverified companies from publishing or reopening jobs.
+- **Append-Only Audit Logging & Security Event Trail (Phase 5C)**:
+  - Immutable `AuditLog` entity with indexed snapshot fields and zero mutable business entity foreign keys.
+  - Transaction-isolated failure auditing (`Propagation.REQUIRES_NEW`) ensuring administrative mutation rejections and self-disable attempts survive business rollbacks.
+  - Spring Security `AuthenticationAuditEventListener` capturing `ADMIN_LOGIN_SUCCESS` and `ADMIN_LOGIN_FAILURE` (restricted to existing `ROLE_ADMIN` accounts).
+  - Strict JSON allowlist sanitization preventing leakage of passwords, JWTs, stack traces, and binary blobs.
+- **Platform Analytics Engine (Phase 5D)**:
+  - Database-level `COUNT` / `GROUP BY` aggregations via `MetricCountDto` constructor projections with zero JVM entity collection hydration.
+  - Platform overview KPIs, current application funnel status breakdown, job marketplace distributions, company ecosystem metrics, user demographics, and bounded time-series trends ($1 \le \text{days} \le 365$).
+  - Full enum map zero-filling (all enum constants populated with `0L` for deterministic API responses).
 
 ---
 
@@ -106,11 +127,11 @@ Ensure MySQL is running. The application automatically creates `careerforge_db` 
 
 ### Step 2: Build & Run Test Suite
 ```bash
-# Run complete test suite (103 unit, integration, and E2E tests)
+# Run complete test suite (200 unit, integration, and E2E tests)
 ./tools/apache-maven-3.9.9/bin/mvn.cmd clean test
 
-# Run only the Phase 4E End-to-End Workflow Integration Test
-./tools/apache-maven-3.9.9/bin/mvn.cmd test "-Dtest=Phase4EndToEndWorkflowIntegrationTest"
+# Run Phase 5 specific test suites
+./tools/apache-maven-3.9.9/bin/mvn.cmd test "-Dtest=Admin*Test"
 ```
 
 ### Step 3: Run the Backend Application
@@ -185,10 +206,10 @@ Upon startup, `DataInitializer` populates standard technical skills and 3 develo
 - `GET /api/v1/recruiters/jobs` — List company jobs with status filtering & pagination
 - `GET /api/v1/recruiters/jobs/{id}` — Get company job details with skills
 - `PUT /api/v1/recruiters/jobs/{id}` — Update company job & required skills
-- `PATCH /api/v1/recruiters/jobs/{id}/publish` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `PUBLISHED`
+- `PATCH /api/v1/recruiters/jobs/{id}/publish` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `PUBLISHED` (requires verified company)
 - `PATCH /api/v1/recruiters/jobs/{id}/unpublish` — Transition `PUBLISHED` $\rightarrow$ `DRAFT`
 - `PATCH /api/v1/recruiters/jobs/{id}/close` — Transition `PUBLISHED` $\rightarrow$ `CLOSED`
-- `PATCH /api/v1/recruiters/jobs/{id}/reopen` — Transition `CLOSED` $\rightarrow$ `PUBLISHED`
+- `PATCH /api/v1/recruiters/jobs/{id}/reopen` — Transition `CLOSED` $\rightarrow$ `PUBLISHED` (requires verified company)
 - `PATCH /api/v1/recruiters/jobs/{id}/archive` — Transition `DRAFT`/`CLOSED` $\rightarrow$ `ARCHIVED`
 - `DELETE /api/v1/recruiters/jobs/{id}` — Delete job (`DRAFT` or `ARCHIVED` only)
 
@@ -210,6 +231,33 @@ Upon startup, `DataInitializer` populates standard technical skills and 3 develo
 - `PATCH /api/v1/notifications/{id}/read` — Mark single notification as read
 - `PATCH /api/v1/notifications/read-all` — Mark all user notifications as read
 
+### 9. Admin User Management (`/api/v1/admin/users` — Role: `ROLE_ADMIN`)
+- `GET /api/v1/admin/users` — List and search users with role, enabled, keyword, and date filters
+- `GET /api/v1/admin/users/{id}` — Inspect detailed user account with student/recruiter profile aggregation
+- `PATCH /api/v1/admin/users/{id}/status` — Enable or disable user account (with mandatory reason and self-disablement protection)
+
+### 10. Admin Company Verification & Moderation (`/api/v1/admin/companies` — Role: `ROLE_ADMIN`)
+- `GET /api/v1/admin/companies` — List and search companies with verification status and keyword filtering
+- `GET /api/v1/admin/companies/{id}` — Inspect detailed company dossier, recruiter roster, and active job count
+- `PATCH /api/v1/admin/companies/{id}/verification` — Approve or reject company verification (with mandatory reason and recruiter alert)
+
+### 11. Admin Job Content Moderation (`/api/v1/admin/jobs` — Role: `ROLE_ADMIN`)
+- `GET /api/v1/admin/jobs` — List and filter all platform jobs by status, company, work mode, and keyword
+- `GET /api/v1/admin/jobs/{id}` — Inspect full job details, required skills, and applicant count
+- `PATCH /api/v1/admin/jobs/{id}/moderate` — Moderate job status (`FORCE_CLOSE`, `FORCE_ARCHIVE`, `RETURN_TO_DRAFT`)
+
+### 12. Admin Security & Audit Trail (`/api/v1/admin/audit-logs` — Role: `ROLE_ADMIN`)
+- `GET /api/v1/admin/audit-logs` — Paginated query of security audit events with multi-criteria filtering
+- `GET /api/v1/admin/audit-logs/{id}` — Inspect complete audit event details including allowlisted state changes and client context
+
+### 13. Admin Platform Analytics Engine (`/api/v1/admin/analytics` — Role: `ROLE_ADMIN`)
+- `GET /api/v1/admin/analytics/overview` — Executive summary KPIs across users, companies, jobs, and applications
+- `GET /api/v1/admin/analytics/applications/funnel` — Application lifecycle stage breakdown and conversion rates (with optional job/company/date filters)
+- `GET /api/v1/admin/analytics/jobs` — Job marketplace distributions across status, work mode, job type, and experience level
+- `GET /api/v1/admin/analytics/companies` — Company ecosystem distributions, verification breakdown, and recruiter metrics
+- `GET /api/v1/admin/analytics/users` — User demographics, role distributions, and account health ratios
+- `GET /api/v1/admin/analytics/trends` — Daily time-series activity trends for registrations, job postings, and applications ($1 \le \text{days} \le 365$)
+
 ---
 
 ## Test Suite Baseline & Verification Status
@@ -217,7 +265,7 @@ Upon startup, `DataInitializer` populates standard technical skills and 3 develo
 ```
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 103, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0
 [INFO] 
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
@@ -229,4 +277,8 @@ Upon startup, `DataInitializer` populates standard technical skills and 3 develo
 - **Phase 3**: Recruiter Profiles, Company Directory, Job State Machine, Public Search (24 tests)
 - **Phase 4A–4D**: Application Domain, Skill Matching Engine, Notifications, Saved Jobs, ATS Pipeline (35 tests)
 - **Phase 4E**: End-to-End Workflow Integration Test Suite (4 comprehensive multi-scenario tests)
-- **Total Automated Test Count**: **103 Tests Passing (0 Failures, 0 Errors, 0 Skipped)**
+- **Phase 5A**: Admin User Management, RBAC, and Self-Disablement Protection (23 tests)
+- **Phase 5B**: Company Verification, Admin Job Moderation, and Publish Guards (31 tests)
+- **Phase 5C**: Append-Only Security Audit Logging and Transaction Isolation (22 tests)
+- **Phase 5D**: Admin Platform Analytics Engine and Database-Level Aggregations (21 tests)
+- **Total Automated Test Count**: **200 Tests Passing (0 Failures, 0 Errors, 0 Skipped)**

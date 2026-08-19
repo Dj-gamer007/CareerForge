@@ -1,6 +1,6 @@
 # CareerForge — Technical Architecture & System Blueprint
 
-**Document Version:** 1.2.0  
+**Document Version:** 1.5.0  
 **Project:** CareerForge — Intelligent Career & Recruitment Management Platform  
 **Target Architecture:** Production-Grade Layered Java Full-Stack System  
 
@@ -8,15 +8,15 @@
 
 ## 1. System Requirements & Domain Analysis
 
-CareerForge is an enterprise-ready career management and recruitment platform designed around three primary user personas: **Student**, **Recruiter**, and **Admin**. The platform provides automated candidate-job skill matching with deterministic gap analysis, full lifecycle applicant tracking (ATS), company profile management, resume storage abstraction, real-time platform notifications, and administrative moderation.
+CareerForge is an enterprise-ready career management and recruitment platform designed around three primary user personas: **Student**, **Recruiter**, and **Admin**. The platform provides automated candidate-job skill matching with deterministic gap analysis, full lifecycle applicant tracking (ATS), company profile management, resume storage abstraction, real-time platform notifications, administrative governance, company verification, content moderation, security audit logging, and server-side platform analytics.
 
 ### 1.1 Persona Capability Matrix
 
-| Role | Implemented Phase 1–4 Capabilities |
+| Role | Implemented Phase 1–5 Capabilities |
 | :--- | :--- |
 | **STUDENT** | - Professional Profile Management (Bio, Education, Experience, Skills, Certifications) with real-time completion % calculation.<br>- Multi-Resume Upload (Filesystem abstraction) with automatic active resume designation.<br>- Public Job Discovery with Dynamic Multi-Criteria Filtering & Sorting.<br>- Real-time Deterministic Skill-Matching Preview & Gap Breakdown.<br>- Job Bookmarking / Saved Jobs.<br>- Application Submission with Active Resume Fallback and Historical Score Snapshotting.<br>- Candidate Self-Withdrawal from early lifecycle states.<br>- Notification Inbox & Live Unread Counter. |
-| **RECRUITER** | - Recruiter Profile & Company Registration.<br>- Company Profile Management (Name, Description, Industry, Size, Location, Website, Logo).<br>- Job Posting with Required and Optional Skills with Minimum Proficiency Levels.<br>- Complete Job State Machine (`DRAFT` $\leftrightarrow$ `PUBLISHED` $\leftrightarrow$ `CLOSED` $\rightarrow$ `ARCHIVED`).<br>- Recruiter Applicant Tracking System (ATS) Pipeline (`APPLIED` $\rightarrow$ `UNDER_REVIEW` $\rightarrow$ `SHORTLISTED` $\rightarrow$ `INTERVIEW_SCHEDULED` $\rightarrow$ `ACCEPTED` / `REJECTED`).<br>- Interview Scheduling and Rescheduling with Future Timestamp Enforcement.<br>- Private Recruiter Evaluation Notes (`recruiterNotes`).<br>- Company-Scoped Candidate Resume Download. |
-| **ADMIN** | - System-wide seed accounts and role enforcement infrastructure (`ROLE_ADMIN`).<br>- Platform moderation and audit logging framework. |
+| **RECRUITER** | - Recruiter Profile & Company Registration.<br>- Company Profile Management (Name, Description, Industry, Size, Location, Website, Logo).<br>- Job Posting with Required and Optional Skills with Minimum Proficiency Levels.<br>- Complete Job State Machine (`DRAFT` $\leftrightarrow$ `PUBLISHED` $\leftrightarrow$ `CLOSED` $\rightarrow$ `ARCHIVED`), with publishing gated by company verification.<br>- Recruiter Applicant Tracking System (ATS) Pipeline (`APPLIED` $\rightarrow$ `UNDER_REVIEW` $\rightarrow$ `SHORTLISTED` $\rightarrow$ `INTERVIEW_SCHEDULED` $\rightarrow$ `ACCEPTED` / `REJECTED`).<br>- Interview Scheduling and Rescheduling with Future Timestamp Enforcement.<br>- Private Recruiter Evaluation Notes (`recruiterNotes`).<br>- Company-Scoped Candidate Resume Download. |
+| **ADMIN** | - Platform User Directory with search, multi-criteria filtering, and detailed profile inspection.<br>- Account status management (`enable`/`disable`) with mandatory reason and self-disablement protection.<br>- Company Verification State Machine (`PENDING` $\leftrightarrow$ `VERIFIED` $\leftrightarrow$ `REJECTED`) with recruiter alerts.<br>- Job Content Moderation State Machine (`FORCE_CLOSE`, `FORCE_ARCHIVE`, `RETURN_TO_DRAFT`).<br>- Append-Only Security Audit Trail with transaction isolation (`Propagation.REQUIRES_NEW` for failure audits).<br>- Authentication event listener tracking admin login successes and failures.<br>- Database-Aggregated Platform Analytics (Overview KPIs, Funnel Analysis, Job/Company/User distributions, Time-Series Trends). |
 
 ---
 
@@ -33,8 +33,10 @@ graph TD
     subgraph API Gateway & Security Layer [Spring Security 6]
         JWTFilter[JWT Authentication Filter]
         SecConfig[SecurityFilterChain / RBAC Rules]
+        AuthListener[AuthenticationAuditEventListener]
         Axios -->|REST API + Bearer Token| JWTFilter
         JWTFilter --> SecConfig
+        SecConfig -->|Auth Events| AuthListener
     end
 
     subgraph Backend Application Layer [Spring Boot 3.2.5 / Java 17]
@@ -44,6 +46,10 @@ graph TD
         SecConfig --> CompCtrl[CompanyController]
         SecConfig --> JobCtrl[JobController / Public Job Discovery]
         SecConfig --> NotifCtrl[NotificationController]
+        SecConfig --> AdminUserCtrl[AdminUserController]
+        SecConfig --> AdminModCtrl[AdminModerationController]
+        SecConfig --> AdminAuditCtrl[AdminAuditLogController]
+        SecConfig --> AdminAnalyticsCtrl[AdminAnalyticsController]
 
         AuthCtrl --> AuthService[AuthService + RefreshTokenService]
         StudCtrl --> StudService[StudentProfileService]
@@ -55,9 +61,19 @@ graph TD
         JobCtrl --> JobService[JobService]
         NotifCtrl --> NotifService[NotificationService]
 
+        AdminUserCtrl --> AdminUserService[AdminUserService]
+        AdminModCtrl --> AdminModService[AdminModerationService]
+        AdminAuditCtrl --> AuditLogService[AuditLogService]
+        AdminAnalyticsCtrl --> AdminAnalyticsService[AdminAnalyticsService]
+        AuthListener --> AuditLogService
+
+        AdminUserService --> AuditLogService
+        AdminModService --> AuditLogService
+        JobService --> AuditLogService
+        AdminModService --> NotifService
         AppService --> MatchEngine[SkillMatchingService]
         AppService --> StorageService[StorageService Abstraction]
-        AppService --> NotifService[NotificationService Dispatcher]
+        AppService --> NotifService
         StudService --> StorageService
     end
 
@@ -73,8 +89,15 @@ graph TD
         AppService --> Repo
         SavedJobService --> Repo
         NotifService --> Repo
+        AdminUserService --> Repo
+        AdminModService --> Repo
+        AuditLogService --> Repo
+        AdminAnalyticsService --> Repo
         JobService --> Spec
         AppService --> Spec
+        AdminUserService --> Spec
+        AdminModService --> Spec
+        AuditLogService --> Spec
 
         Repo -->|HikariCP / JDBC| MySQL[(MySQL Database / H2 Test DB)]
         StorageService -->|Filesystem I/O| DiskStorage[Local Disk ./uploads/resumes/]
@@ -256,27 +279,52 @@ erDiagram
         boolean is_active
         datetime uploaded_at
     }
+
+    AUDIT_LOG {
+        bigint id PK
+        bigint actor_user_id
+        string actor_email
+        string actor_role
+        string event_type ENUM
+        string target_entity_type ENUM
+        bigint target_entity_id
+        string target_identifier
+        string status ENUM
+        string reason
+        text details
+        string ip_address
+        string user_agent
+        datetime created_at
+    }
 ```
 
 ---
 
 ## 4. State Machines & Lifecycle Blueprints
 
-### 4.1 Job Lifecycle State Machine
+### 4.1 Job Lifecycle State Machine (Recruiter & Admin)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DRAFT : Create Job
-    DRAFT --> PUBLISHED : Publish (requires skills & valid deadline)
-    PUBLISHED --> DRAFT : Unpublish (pause applications)
-    PUBLISHED --> CLOSED : Close (stop accepting applications)
-    CLOSED --> PUBLISHED : Reopen
-    DRAFT --> ARCHIVED : Archive
-    CLOSED --> ARCHIVED : Archive
+    [*] --> DRAFT : Recruiter Creates Job
+    DRAFT --> PUBLISHED : Recruiter Publishes (Gated by Company Verification)
+    PUBLISHED --> DRAFT : Recruiter Unpublishes
+    PUBLISHED --> CLOSED : Recruiter Closes
+    CLOSED --> PUBLISHED : Recruiter Reopens (Gated by Company Verification)
+    DRAFT --> ARCHIVED : Recruiter Archives
+    CLOSED --> ARCHIVED : Recruiter Archives
+
+    PUBLISHED --> CLOSED : Admin Force-Close (Reason Required)
+    PUBLISHED --> ARCHIVED : Admin Force-Archive (Reason Required)
+    DRAFT --> ARCHIVED : Admin Force-Archive (Reason Required)
+    CLOSED --> ARCHIVED : Admin Force-Archive (Reason Required)
+    CLOSED --> DRAFT : Admin Return to Draft (Reason Required)
+    ARCHIVED --> DRAFT : Admin Return to Draft (Reason Required)
+
     ARCHIVED --> [*]
 ```
 
-### 4.2 Application Lifecycle State Machine
+### 4.2 Application Lifecycle State Machine (ATS)
 
 ```mermaid
 stateDiagram-v2
@@ -298,6 +346,17 @@ stateDiagram-v2
     ACCEPTED --> [*] : Terminal State
     REJECTED --> [*] : Terminal State
     WITHDRAWN --> [*] : Terminal State
+```
+
+### 4.3 Company Verification State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING : Recruiter Registers Company
+    PENDING --> VERIFIED : Admin Approves (Reason Required)
+    PENDING --> REJECTED : Admin Rejects (Reason Required)
+    REJECTED --> VERIFIED : Admin Re-evaluates / Approves (Reason Required)
+    VERIFIED --> REJECTED : Admin Revokes / Rejects (Reason Required)
 ```
 
 ---
@@ -325,35 +384,117 @@ $$\text{Score} = \left( \frac{\sum_{k \in \text{Job Skills}} (W_k \times \mu_k)}
 
 ---
 
-## 6. Security, RBAC & Cross-Tenant Ownership Boundaries
+## 6. Administrative Governance, Audit Logging & Security Topology
 
-1. **Authentication Principle**:
-   - Stateless JWT authentication via `JwtAuthenticationFilter`.
-   - Security principal resolved as `UserPrincipal` containing `id`, `email`, and `authorities`.
-2. **Student Ownership Isolation**:
-   - Student profile, sub-resources, applications, bookmarks, and notifications are filtered strictly by `user_id` or `student_profile_id`.
-   - Unauthorized cross-student access throws `ResourceNotFoundException` $\rightarrow$ mapped to **`404 Not Found`** by `GlobalExceptionHandler`.
-3. **Recruiter Cross-Company Isolation**:
-   - Recruiter operations (job management, applicant listing, dossier inspection, status updates, evaluation notes, resume streaming) verify:
-     $$\text{application.job.company.id} == \text{recruiter.company.id}$$
-   - Attempted access across company boundaries returns **`404 Not Found`** to completely mask existence and prevent ID enumeration.
-4. **Internal Evaluation Notes Privacy**:
-   - `recruiterNotes` is strictly excluded from all student-facing DTOs (`StudentApplicationResponse`, `StudentApplicationDetailResponse`) and platform notifications.
+```mermaid
+graph TD
+    subgraph Administrative Actions
+        AdminUser[Admin User Mutation]
+        AdminCompany[Company Verification]
+        AdminJob[Job Moderation]
+        AuthEvents[Authentication Events]
+    end
+
+    subgraph Audit Service Boundary [AuditLogService]
+        AuditService[AuditLogServiceImpl]
+        SuccessTx["logSuccess (Propagation.REQUIRED)"]
+        FailureTx["logFailure (Propagation.REQUIRES_NEW)"]
+    end
+
+    subgraph Persistence
+        AuditRepo[AuditLogRepository]
+        AuditTable[(audit_logs table)]
+    end
+
+    AdminUser -->|Success| SuccessTx
+    AdminUser -->|Self-Disable Attempt| FailureTx
+    AdminCompany -->|Status Updated| SuccessTx
+    AdminJob -->|Moderated| SuccessTx
+    AdminJob -->|Invalid Transition| FailureTx
+    AuthEvents -->|Admin Login Success| SuccessTx
+    AuthEvents -->|Admin Login Failure| FailureTx
+
+    SuccessTx --> AuditRepo
+    FailureTx --> AuditRepo
+    AuditRepo --> AuditTable
+```
+
+### 6.1 Transaction Isolation Guarantees
+1. **Coupled Success Audits**: `logSuccess` executes with `@Transactional(propagation = Propagation.REQUIRED)`, guaranteeing that the audit record is committed atomically alongside the business mutation.
+2. **Rollback-Resilient Failure Audits**: `logFailure` executes with `@Transactional(propagation = Propagation.REQUIRES_NEW)`. When an administrative operation fails (e.g. self-disable attempt, invalid moderation transition), the outer business transaction rolls back, but the failure audit log commits independently to preserve the forensic record.
+
+### 6.2 Strict Audit Data Sanitization
+Audit details are serialized to JSON using an explicit allowlist mapping. The system enforces zero exposure of:
+- Plaintext passwords or `passwordHash`
+- Access / Refresh JWT tokens and bearer headers
+- Spring Security `Authentication` objects or stack traces
+- Resume binary content or filesystem storage paths
+- Internal recruitment notes (`recruiterNotes`)
 
 ---
 
-## 7. Performance & N+1 Prevention Strategy
+## 7. Platform Analytics Engine Architecture
 
-1. **Job Discovery**: `JobSpecification` dynamically joins search criteria while skills for all returned jobs on the page are batch-fetched in a single query via `JobSkillRepository.findAllByJob_IdInWithSkill(jobIds)`.
-2. **Saved Jobs**: `SavedJobRepository.findAllByStudentProfile_Id` uses `@EntityGraph(attributePaths = {"job", "job.company"})` and batch-loads skills via `JobSkillRepository`.
-3. **Student Applications**: `ApplicationRepository.findAllByStudentProfile_Id` uses `@EntityGraph(attributePaths = {"job", "job.company", "resume"})`.
-4. **Recruiter Applicant Tracking**: Detail queries utilize eager EntityGraphs `attributePaths = {"job", "job.company", "resume", "studentProfile", "studentProfile.user"}`.
-5. **Skill Matching Engine**: `StudentSkillRepository` and `JobSkillRepository` use `JOIN FETCH js.skill` to load all skills in 2 single queries total.
+The platform analytics engine (`AdminAnalyticsServiceImpl`) delivers real-time aggregated insights using database-level reduction:
+
+```mermaid
+graph LR
+    subgraph Controller
+        AnalyticsCtrl[AdminAnalyticsController]
+    end
+
+    subgraph Service
+        AnalyticsService[AdminAnalyticsServiceImpl]
+    end
+
+    subgraph Database Aggregations
+        UserCounts["UserRepository: COUNT / GROUP BY Role / Enabled"]
+        CompanyCounts["CompanyRepository: COUNT / GROUP BY Status / Size"]
+        JobCounts["JobRepository: COUNT / GROUP BY Status / WorkMode / Type / Level"]
+        AppCounts["ApplicationRepository: COUNT / GROUP BY Status (Filtered)"]
+        TrendCounts["Time-Bucket COUNT Queries (1-365 days)"]
+    end
+
+    AnalyticsCtrl --> AnalyticsService
+    AnalyticsService --> UserCounts
+    AnalyticsService --> CompanyCounts
+    AnalyticsService --> JobCounts
+    AnalyticsService --> AppCounts
+    AnalyticsService --> TrendCounts
+```
+
+### 7.1 Key Technical Invariants
+1. **Zero Entity Hydration**: Aggregate queries utilize Spring Data JPA scalar counts or constructor expressions (`new com.careerforge.dto.response.analytics.MetricCountDto(e.field, COUNT(e))`). Entire entity collections are never loaded into JVM heap memory.
+2. **Enum Zero-Fill Standard**: All enum-backed distribution maps (`JobStatus`, `WorkMode`, `JobType`, `ExperienceLevel`, `CompanyVerificationStatus`, `Role`, `ApplicationStatus`) populate every enum constant, defaulting zero-count constants to `0L` for deterministic API contracts.
+3. **Zero-Safe Calculations**: Percentage and rate calculations are protected against divide-by-zero, defaulting to `0.0%` when totals are zero.
 
 ---
 
-## 8. Integration Testing Architecture
+## 8. Security, RBAC & Access Control Matrix
 
-- **Test Suite Location**: `src/test/java/com/careerforge/integration/Phase4EndToEndWorkflowIntegrationTest.java`
-- **Total Baseline Tests**: **103 Automated Tests** across unit, controller, integration, and E2E tiers.
-- **Coverage**: 100% of the cross-module journey (Student registration $\rightarrow$ Profile setup $\rightarrow$ Recruiter company/job creation $\rightarrow$ Public discovery $\rightarrow$ Skill matching $\rightarrow$ Application submission $\rightarrow$ Snapshot score $\rightarrow$ ATS state machine $\rightarrow$ Interview scheduling $\rightarrow$ Resume streaming $\rightarrow$ Notifications $\rightarrow$ Saved jobs $\rightarrow$ Cross-tenant security isolation).
+| Endpoint Route Pattern | Required Role | Student | Recruiter | Admin | Unauthenticated |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `/api/v1/auth/**` | `PERMIT_ALL` | Allowed | Allowed | Allowed | Allowed |
+| `/api/v1/health` | `PERMIT_ALL` | Allowed | Allowed | Allowed | Allowed |
+| `/api/v1/jobs/**` (Public) | `PERMIT_ALL` | Allowed | Allowed | Allowed | Allowed |
+| `/api/v1/companies/**` (Public) | `PERMIT_ALL` | Allowed | Allowed | Allowed | Allowed |
+| `/api/v1/notifications/**` | `IS_AUTHENTICATED` | Allowed | Allowed | Allowed | 401 |
+| `/api/v1/students/**` | `ROLE_STUDENT` | **Allowed** | 403 | 403 | 401 |
+| `/api/v1/recruiters/**` | `ROLE_RECRUITER` | 403 | **Allowed** | 403 | 401 |
+| `/api/v1/admin/**` | `ROLE_ADMIN` | 403 | 403 | **Allowed** | 401 |
+
+---
+
+## 9. Integration & Automated Testing Architecture
+
+- **Test Suite Location**: `src/test/java/com/careerforge/**`
+- **Total Automated Test Count**: **200 Automated Tests** passing with 0 failures, 0 errors, 0 skips.
+- **Coverage Summary**:
+  - Phase 1 Authentication & Token Rotation (24 tests)
+  - Phase 2 Student Profile & Resume Storage (16 tests)
+  - Phase 3 Company & Job Lifecycle State Machine (24 tests)
+  - Phase 4A–4E Applications, Skill Matching, Saved Jobs, ATS & End-to-End Workflows (39 tests)
+  - Phase 5A Admin User Management & RBAC Foundation (23 tests)
+  - Phase 5B Company Verification & Job Content Moderation (31 tests)
+  - Phase 5C Append-Only Audit Logging & Security Event Trail (22 tests)
+  - Phase 5D Platform Analytics Engine & Database Aggregations (21 tests)
