@@ -25,4 +25,12 @@ public interface CompanyRepository extends JpaRepository<Company, Long>, JpaSpec
 
     Page<Company> findAllByVerificationStatusAndNameContainingIgnoreCase(
             CompanyVerificationStatus status, String name, Pageable pageable);
+
+    long countByVerificationStatus(CompanyVerificationStatus status);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(c.verificationStatus, COUNT(c)) FROM Company c GROUP BY c.verificationStatus")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<CompanyVerificationStatus>> countCompaniesGroupedByVerificationStatus();
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(c.companySize, COUNT(c)) FROM Company c WHERE c.companySize IS NOT NULL GROUP BY c.companySize")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<String>> countCompaniesGroupedBySize();
 }

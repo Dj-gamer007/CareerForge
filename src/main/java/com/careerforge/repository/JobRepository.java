@@ -31,4 +31,37 @@ public interface JobRepository extends JpaRepository<Job, Long>, JpaSpecificatio
     long countByCompany_Id(Long companyId);
 
     long countByCompany_IdAndStatus(Long companyId, JobStatus status);
+
+    long countByStatus(JobStatus status);
+
+    long countByCreatedAtBetween(java.time.LocalDateTime start, java.time.LocalDateTime end);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(j.status, COUNT(j)) FROM Job j " +
+            "WHERE (:from IS NULL OR j.createdAt >= :from) AND (:to IS NULL OR j.createdAt <= :to) GROUP BY j.status")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<JobStatus>> countJobsGroupedByStatus(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(j.workMode, COUNT(j)) FROM Job j " +
+            "WHERE (:from IS NULL OR j.createdAt >= :from) AND (:to IS NULL OR j.createdAt <= :to) GROUP BY j.workMode")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<com.careerforge.entity.enums.WorkMode>> countJobsGroupedByWorkMode(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(j.jobType, COUNT(j)) FROM Job j " +
+            "WHERE (:from IS NULL OR j.createdAt >= :from) AND (:to IS NULL OR j.createdAt <= :to) GROUP BY j.jobType")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<com.careerforge.entity.enums.JobType>> countJobsGroupedByJobType(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(j.experienceLevel, COUNT(j)) FROM Job j " +
+            "WHERE (:from IS NULL OR j.createdAt >= :from) AND (:to IS NULL OR j.createdAt <= :to) GROUP BY j.experienceLevel")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<com.careerforge.entity.enums.ExperienceLevel>> countJobsGroupedByExperienceLevel(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @org.springframework.data.jpa.repository.Query("SELECT COUNT(j) FROM Job j WHERE (:from IS NULL OR j.createdAt >= :from) AND (:to IS NULL OR j.createdAt <= :to)")
+    long countJobsWithDateRange(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
 }

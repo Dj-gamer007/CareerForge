@@ -41,4 +41,20 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
     long countByJob_IdAndStatus(Long jobId, ApplicationStatus status);
 
     long countByStudentProfile_Id(Long studentProfileId);
+
+    long countByStatus(ApplicationStatus status);
+
+    long countByCreatedAtBetween(java.time.LocalDateTime start, java.time.LocalDateTime end);
+
+    @org.springframework.data.jpa.repository.Query("SELECT new com.careerforge.dto.response.analytics.MetricCountDto(a.status, COUNT(a)) FROM Application a " +
+            "WHERE (:jobId IS NULL OR a.job.id = :jobId) " +
+            "AND (:companyId IS NULL OR a.job.company.id = :companyId) " +
+            "AND (:from IS NULL OR a.createdAt >= :from) " +
+            "AND (:to IS NULL OR a.createdAt <= :to) " +
+            "GROUP BY a.status")
+    java.util.List<com.careerforge.dto.response.analytics.MetricCountDto<ApplicationStatus>> countApplicationsGroupedByStatus(
+            @org.springframework.data.repository.query.Param("jobId") Long jobId,
+            @org.springframework.data.repository.query.Param("companyId") Long companyId,
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
 }
