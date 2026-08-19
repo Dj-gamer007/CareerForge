@@ -41,6 +41,8 @@ class JobServiceTest {
     private SkillRepository skillRepository;
     @Mock
     private RecruiterService recruiterService;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private JobServiceImpl jobService;

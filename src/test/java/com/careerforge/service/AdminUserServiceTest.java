@@ -61,6 +61,9 @@ class AdminUserServiceTest {
     @Mock
     private StudentSkillRepository studentSkillRepository;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     @InjectMocks
     private AdminUserServiceImpl adminUserService;
 

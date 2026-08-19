@@ -38,6 +38,7 @@ public class AdminModerationServiceImpl implements AdminModerationService {
     private final JobSkillRepository jobSkillRepository;
     private final ApplicationRepository applicationRepository;
     private final NotificationService notificationService;
+    private final com.careerforge.service.AuditLogService auditLogService;
 
     // ==========================================
     // Company Verification & Inspection
@@ -164,6 +165,26 @@ public class AdminModerationServiceImpl implements AdminModerationService {
 
         log.info("Admin ID: {} updated company ID: {} verification status from {} to {} (Reason: {})",
                 adminUserId, companyId, oldStatus, request.getVerificationStatus(), request.getReason());
+
+        String adminEmail = resolveAdminEmail(adminUserId);
+        String adminRole = "ROLE_ADMIN";
+
+        auditLogService.logSuccess(
+                adminUserId,
+                adminEmail,
+                adminRole,
+                com.careerforge.entity.enums.AuditEventType.COMPANY_VERIFICATION_UPDATED,
+                com.careerforge.entity.enums.AuditTargetType.COMPANY,
+                saved.getId(),
+                saved.getName(),
+                request.getReason(),
+                Map.of(
+                        "companyId", saved.getId(),
+                        "companyName", saved.getName(),
+                        "previousVerificationStatus", oldStatus.name(),
+                        "newVerificationStatus", saved.getVerificationStatus().name()
+                )
+        );
 
         long totalJobs = jobRepository.countByCompany_Id(company.getId());
         long activeJobs = jobRepository.countByCompany_IdAndStatus(company.getId(), JobStatus.PUBLISHED);
@@ -302,11 +323,50 @@ public class AdminModerationServiceImpl implements AdminModerationService {
         JobStatus current = job.getStatus();
         JobStatus target = request.getStatus();
 
+        String adminEmail = resolveAdminEmail(adminUserId);
+        String adminRole = "ROLE_ADMIN";
+
         if (current == target) {
+            auditLogService.logFailure(
+                    adminUserId,
+                    adminEmail,
+                    adminRole,
+                    com.careerforge.entity.enums.AuditEventType.JOB_MODERATION_PERFORMED,
+                    com.careerforge.entity.enums.AuditTargetType.JOB,
+                    jobId,
+                    job.getTitle(),
+                    request.getReason(),
+                    Map.of(
+                            "jobId", jobId,
+                            "currentStatus", current.name(),
+                            "attemptedStatus", target.name(),
+                            "error", "Job is already in status " + target
+                    )
+            );
             throw new BadRequestException("Job is already in status " + target);
         }
 
-        validateModerationTransition(current, target);
+        try {
+            validateModerationTransition(current, target);
+        } catch (BadRequestException ex) {
+            auditLogService.logFailure(
+                    adminUserId,
+                    adminEmail,
+                    adminRole,
+                    com.careerforge.entity.enums.AuditEventType.JOB_MODERATION_PERFORMED,
+                    com.careerforge.entity.enums.AuditTargetType.JOB,
+                    jobId,
+                    job.getTitle(),
+                    request.getReason(),
+                    Map.of(
+                            "jobId", jobId,
+                            "currentStatus", current.name(),
+                            "attemptedStatus", target.name(),
+                            "error", ex.getMessage()
+                    )
+            );
+            throw ex;
+        }
 
         job.setStatus(target);
         Job saved = jobRepository.save(job);
@@ -327,6 +387,25 @@ public class AdminModerationServiceImpl implements AdminModerationService {
 
         log.info("Admin ID: {} moderated job ID: {} from {} to {} (Reason: {})",
                 adminUserId, jobId, current, target, request.getReason());
+
+        auditLogService.logSuccess(
+                adminUserId,
+                adminEmail,
+                adminRole,
+                com.careerforge.entity.enums.AuditEventType.JOB_MODERATION_PERFORMED,
+                com.careerforge.entity.enums.AuditTargetType.JOB,
+                saved.getId(),
+                saved.getTitle(),
+                request.getReason(),
+                Map.of(
+                        "jobId", saved.getId(),
+                        "jobTitle", saved.getTitle(),
+                        "companyId", saved.getCompany().getId(),
+                        "companyName", saved.getCompany().getName(),
+                        "previousStatus", current.name(),
+                        "newStatus", saved.getStatus().name()
+                )
+        );
 
         List<JobSkill> skills = jobSkillRepository.findAllByJobWithSkill(saved);
         List<JobSkillResponse> skillResponses = skills.stream()
@@ -396,5 +475,16 @@ public class AdminModerationServiceImpl implements AdminModerationService {
                 .isRequired(jobSkill.isRequired())
                 .minimumProficiency(jobSkill.getMinimumProficiency())
                 .build();
+    }
+
+    private String resolveAdminEmail(Long adminUserId) {
+        try {
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.careerforge.security.UserPrincipal principal) {
+                return principal.getEmail();
+            }
+        } catch (Exception ignored) {
+        }
+        return adminUserId != null ? "admin-" + adminUserId + "@careerforge.local" : "ADMIN";
     }
 }

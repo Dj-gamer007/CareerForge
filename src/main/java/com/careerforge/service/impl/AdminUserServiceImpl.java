@@ -41,6 +41,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     private final CertificationRepository certificationRepository;
     private final ResumeRepository resumeRepository;
     private final StudentSkillRepository studentSkillRepository;
+    private final com.careerforge.service.AuditLogService auditLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -147,18 +148,54 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     @Transactional
     public AdminUserSummaryResponse updateUserStatus(Long currentAdminId, Long targetUserId, UserStatusUpdateRequest request) {
+        String adminEmail = resolveAdminEmail(currentAdminId);
+        String adminRole = "ROLE_ADMIN";
+
         if (currentAdminId != null && currentAdminId.equals(targetUserId) && Boolean.FALSE.equals(request.getEnabled())) {
+            auditLogService.logFailure(
+                    currentAdminId,
+                    adminEmail,
+                    adminRole,
+                    com.careerforge.entity.enums.AuditEventType.USER_SELF_DISABLE_REJECTED,
+                    com.careerforge.entity.enums.AuditTargetType.USER,
+                    targetUserId,
+                    adminEmail,
+                    request.getReason(),
+                    Map.of(
+                            "targetUserId", targetUserId,
+                            "attemptedStatus", false,
+                            "error", "Administrators cannot disable their own account"
+                    )
+            );
             throw new BadRequestException("Administrators cannot disable their own account");
         }
 
         User user = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", targetUserId));
 
+        boolean previousStatus = user.isEnabled();
         user.setEnabled(request.getEnabled());
         User savedUser = userRepository.save(user);
 
         log.info("Admin ID: {} updated user ID: {} enabled status to: {} (Reason: {})",
                 currentAdminId, targetUserId, request.getEnabled(), request.getReason());
+
+        auditLogService.logSuccess(
+                currentAdminId,
+                adminEmail,
+                adminRole,
+                com.careerforge.entity.enums.AuditEventType.USER_STATUS_UPDATED,
+                com.careerforge.entity.enums.AuditTargetType.USER,
+                savedUser.getId(),
+                savedUser.getEmail(),
+                request.getReason(),
+                Map.of(
+                        "targetUserId", savedUser.getId(),
+                        "targetUserEmail", savedUser.getEmail(),
+                        "previousEnabled", previousStatus,
+                        "newEnabled", savedUser.isEnabled()
+                )
+        );
 
         StudentProfile sp = studentProfileRepository.findByUser_Id(savedUser.getId()).orElse(null);
         RecruiterProfile rp = recruiterProfileRepository.findByUser_Id(savedUser.getId()).orElse(null);
@@ -188,5 +225,16 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();
+    }
+
+    private String resolveAdminEmail(Long adminUserId) {
+        try {
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.careerforge.security.UserPrincipal principal) {
+                return principal.getEmail();
+            }
+        } catch (Exception ignored) {
+        }
+        return adminUserId != null ? "admin-" + adminUserId + "@careerforge.local" : "ADMIN";
     }
 }

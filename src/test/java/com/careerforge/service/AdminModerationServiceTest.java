@@ -57,6 +57,9 @@ class AdminModerationServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     @InjectMocks
     private AdminModerationServiceImpl adminModerationService;
 

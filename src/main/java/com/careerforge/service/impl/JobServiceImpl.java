@@ -41,6 +41,7 @@ public class JobServiceImpl implements JobService {
     private final JobSkillRepository jobSkillRepository;
     private final SkillRepository skillRepository;
     private final RecruiterService recruiterService;
+    private final com.careerforge.service.AuditLogService auditLogService;
 
     // ==========================================
     // Recruiter Operations
@@ -145,6 +146,22 @@ public class JobServiceImpl implements JobService {
         }
 
         if (job.getCompany().getVerificationStatus() != com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED) {
+            auditLogService.logFailure(
+                    userId,
+                    recruiter.getUser() != null ? recruiter.getUser().getEmail() : "RECRUITER",
+                    "ROLE_RECRUITER",
+                    com.careerforge.entity.enums.AuditEventType.JOB_PUBLISH_GUARD_BLOCKED,
+                    com.careerforge.entity.enums.AuditTargetType.JOB,
+                    jobId,
+                    job.getTitle(),
+                    "Cannot publish jobs for an unverified company",
+                    Map.of(
+                            "jobId", jobId,
+                            "companyId", job.getCompany().getId(),
+                            "companyName", job.getCompany().getName(),
+                            "companyVerificationStatus", job.getCompany().getVerificationStatus().name()
+                    )
+            );
             throw new BadRequestException("Cannot publish jobs for an unverified company. Current verification status: " + job.getCompany().getVerificationStatus());
         }
 
@@ -214,6 +231,22 @@ public class JobServiceImpl implements JobService {
         }
 
         if (job.getCompany().getVerificationStatus() != com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED) {
+            auditLogService.logFailure(
+                    userId,
+                    recruiter.getUser() != null ? recruiter.getUser().getEmail() : "RECRUITER",
+                    "ROLE_RECRUITER",
+                    com.careerforge.entity.enums.AuditEventType.JOB_PUBLISH_GUARD_BLOCKED,
+                    com.careerforge.entity.enums.AuditTargetType.JOB,
+                    jobId,
+                    job.getTitle(),
+                    "Cannot reopen jobs for an unverified company",
+                    Map.of(
+                            "jobId", jobId,
+                            "companyId", job.getCompany().getId(),
+                            "companyName", job.getCompany().getName(),
+                            "companyVerificationStatus", job.getCompany().getVerificationStatus().name()
+                    )
+            );
             throw new BadRequestException("Cannot reopen jobs for an unverified company. Current verification status: " + job.getCompany().getVerificationStatus());
         }
 
