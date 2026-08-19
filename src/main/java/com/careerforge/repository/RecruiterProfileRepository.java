@@ -17,10 +17,14 @@ public interface RecruiterProfileRepository extends JpaRepository<RecruiterProfi
 
     boolean existsByUser_Id(Long userId);
 
+    @EntityGraph(attributePaths = {"user", "company"})
     List<RecruiterProfile> findAllByCompany_Id(Long companyId);
 
     @EntityGraph(attributePaths = {"company", "user"})
     List<RecruiterProfile> findAllByUser_IdIn(Collection<Long> userIds);
+
+    @EntityGraph(attributePaths = {"user", "company"})
+    List<RecruiterProfile> findAllByCompany_IdIn(Collection<Long> companyIds);
 
     long countByCompany_Id(Long companyId);
 }

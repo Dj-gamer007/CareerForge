@@ -144,6 +144,10 @@ public class JobServiceImpl implements JobService {
             throw new BadRequestException("Job is already published");
         }
 
+        if (job.getCompany().getVerificationStatus() != com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED) {
+            throw new BadRequestException("Cannot publish jobs for an unverified company. Current verification status: " + job.getCompany().getVerificationStatus());
+        }
+
         // Validate publishing guards
         if (job.getDeadline() != null && job.getDeadline().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("Cannot publish job with a deadline in the past. Please update the deadline.");
@@ -207,6 +211,10 @@ public class JobServiceImpl implements JobService {
 
         if (job.getStatus() != JobStatus.CLOSED) {
             throw new BadRequestException("Only closed jobs can be reopened");
+        }
+
+        if (job.getCompany().getVerificationStatus() != com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED) {
+            throw new BadRequestException("Cannot reopen jobs for an unverified company. Current verification status: " + job.getCompany().getVerificationStatus());
         }
 
         if (job.getDeadline() != null && job.getDeadline().isBefore(LocalDateTime.now())) {
