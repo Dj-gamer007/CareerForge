@@ -1,0 +1,165 @@
+import { useQuery } from '@tanstack/react-query';
+import { recruiterService } from '@/services/recruiter.service';
+import { jobService } from '@/services/job.service';
+import { queryKeys } from '@/lib/queryClient';
+import { Link } from 'react-router-dom';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
+import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
+import { ErrorState } from '@/components/feedback/ErrorState';
+import { Briefcase, Building2, Plus, Users, ShieldAlert, ArrowRight } from 'lucide-react';
+
+export function RecruiterDashboardPage() {
+  const { data: company, isLoading: isCompLoading } = useQuery({
+    queryKey: queryKeys.recruiter.company,
+    queryFn: () => recruiterService.getMyCompany(),
+  });
+
+  const { data: jobsData, isLoading: isJobsLoading, isError, error, refetch } = useQuery({
+    queryKey: queryKeys.recruiter.jobs({ page: 0, size: 5 }),
+    queryFn: () => jobService.getRecruiterJobs({ page: 0, size: 5 }),
+  });
+
+  if (isCompLoading || isJobsLoading) {
+    return <LoadingSpinner text="Loading recruiter workspace..." />;
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load dashboard"
+        message={(error as any)?.response?.data?.message || 'Failed to load company workspace'}
+        onRetry={() => refetch()}
+      />
+    );
+  }
+
+  const jobs = jobsData?.content || [];
+  const publishedCount = jobs.filter((j) => j.status === 'PUBLISHED').length;
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="Employer Recruitment Portal"
+        description="Manage job postings, review algorithmic candidate matches, and track applicants through your hiring stages"
+        actions={
+          <Link to="/recruiter/jobs/new">
+            <Button size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              Post New Job
+            </Button>
+          </Link>
+        }
+      />
+
+      {/* Verification Status Alert Banner */}
+      {company && company.verificationStatus !== 'VERIFIED' && (
+        <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-3 text-amber-900">
+          <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1 text-xs">
+            <p className="font-bold">
+              Organization Status: {company.verificationStatus}
+            </p>
+            <p className="text-amber-700">
+              Your company verification is currently pending administrative review. You can create draft jobs, but publishing requires verified organization status.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Company Profile</p>
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mt-2 truncate">{company?.name || 'No Company Registered'}</h3>
+            <div className="mt-2">
+              <Badge variant={getStatusBadgeVariant(company?.verificationStatus || 'PENDING')}>
+                {company?.verificationStatus || 'UNREGISTERED'}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Published Jobs</p>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <Briefcase className="w-4 h-4" />
+              </div>
+            </div>
+            <h3 className="text-3xl font-extrabold text-slate-900 mt-2">{publishedCount}</h3>
+            <p className="text-xs text-slate-400 mt-1">{jobs.length} total postings managed</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recruitment Pipeline</p>
+              <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <h3 className="text-3xl font-extrabold text-slate-900 mt-2">ATS Active</h3>
+            <p className="text-xs text-slate-400 mt-1">Direct ATS applicant tracking</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Job Postings */}
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <CardTitle>Recent Job Openings</CardTitle>
+          <Link to="/recruiter/jobs" className="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-1">
+            View All ({jobsData?.totalElements || 0}) <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </CardHeader>
+        <CardContent className="p-0">
+          {jobs.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-xs text-slate-500 mb-3">You have not created any job postings yet.</p>
+              <Link to="/recruiter/jobs/new">
+                <Button size="sm">Create First Job Posting</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {jobs.map((job) => (
+                <div key={job.id} className="p-5 flex items-center justify-between gap-4 hover:bg-slate-50/60 transition-colors">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900">{job.title}</h4>
+                      <Badge variant={getStatusBadgeVariant(job.status)}>{job.status}</Badge>
+                      <Badge variant="outline">{job.workMode}</Badge>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {job.location || 'Remote'} &bull; {job.skills?.length || 0} Target Skills
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Link to={`/recruiter/jobs/${job.id}/applications`}>
+                      <Button size="sm" variant="secondary">
+                        <Users className="w-3.5 h-3.5 mr-1.5" />
+                        ATS Pipeline
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
