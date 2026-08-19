@@ -8,6 +8,8 @@ import com.careerforge.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +24,18 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final SkillRepository skillRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
 
     @Override
     @Transactional
     public void run(String... args) {
         seedSkills();
-        seedDevAccounts();
+
+        if (environment.acceptsProfiles(Profiles.of("prod"))) {
+            bootstrapProdAdmin();
+        } else {
+            seedDevAccounts();
+        }
     }
 
     private void seedSkills() {
@@ -91,4 +99,29 @@ public class DataInitializer implements CommandLineRunner {
         userRepository.saveAll(List.of(admin, recruiter, student));
         log.info("Successfully seeded 3 development-only accounts (ADMIN, RECRUITER, STUDENT).");
     }
+
+    private void bootstrapProdAdmin() {
+        if (userRepository.count() > 0) {
+            log.info("Production database already initialized (user count: {}). Skipping admin bootstrapping.", userRepository.count());
+            return;
+        }
+
+        String adminEmail = environment.getProperty("ADMIN_INIT_EMAIL");
+        String adminPassword = environment.getProperty("ADMIN_INIT_PASSWORD");
+
+        if (adminEmail != null && !adminEmail.isBlank() && adminPassword != null && !adminPassword.isBlank()) {
+            User admin = User.builder()
+                    .email(adminEmail.trim())
+                    .passwordHash(passwordEncoder.encode(adminPassword))
+                    .role(Role.ROLE_ADMIN)
+                    .enabled(true)
+                    .build();
+
+            userRepository.save(admin);
+            log.info("Successfully bootstrapped initial production administrator account for: {}", adminEmail.trim());
+        } else {
+            log.warn("Production mode active with empty user database, but ADMIN_INIT_EMAIL / ADMIN_INIT_PASSWORD were not set.");
+        }
+    }
 }
+
