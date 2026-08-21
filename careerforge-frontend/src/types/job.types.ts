@@ -46,26 +46,54 @@ export interface JobDetailResponse extends JobSummaryResponse {
 export interface MatchedSkillDto {
   skillId: number;
   skillName: string;
-  jobRequiredProficiency: ProficiencyLevel;
-  studentProficiency: ProficiencyLevel;
+  category?: string;
   isRequired: boolean;
-  weight: number;
-  scoreMultiplier: number;
+  requiredProficiency: ProficiencyLevel;
+  studentProficiency: ProficiencyLevel;
+  proficiencyMultiplier: number;
+  skillWeight?: number;
+  effectiveScoreContribution?: number;
 }
 
 export interface MissingSkillDto {
   skillId: number;
   skillName: string;
-  jobRequiredProficiency: ProficiencyLevel;
+  category?: string;
   isRequired: boolean;
-  weight: number;
+  requiredProficiency: ProficiencyLevel;
 }
 
 export interface SkillMatchResponse {
+  overallScore: number;
+  matchedRequiredCount: number;
+  totalRequiredCount: number;
+  matchedOptionalCount: number;
+  totalOptionalCount: number;
+  totalJobSkillsCount?: number;
+  totalStudentSkillsCount?: number;
+  isEligible: boolean;
+  matchedSkills: MatchedSkillDto[];
+  missingRequiredSkills: MissingSkillDto[];
+  missingOptionalSkills: MissingSkillDto[];
+}
+
+export interface SavedJobResponse {
+  id: number;
   jobId: number;
   jobTitle: string;
-  matchScore: number;
-  eligible: boolean;
-  matchedSkills: MatchedSkillDto[];
-  missingSkills: MissingSkillDto[];
+  jobSlug: string;
+  companyId: number;
+  companyName: string;
+  companyLogoUrl?: string;
+  location?: string;
+  workMode: WorkMode;
+  jobType: JobType;
+  experienceLevel: ExperienceLevel;
+  salaryMin?: number;
+  salaryMax?: number;
+  currency?: string;
+  status: JobStatus;
+  deadline?: string;
+  savedAt: string;
 }
+

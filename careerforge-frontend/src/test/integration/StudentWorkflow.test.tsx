@@ -26,6 +26,20 @@ const server = setupServer(
       },
     });
   }),
+  http.get('/api/v1/students/skills', () => {
+    return HttpResponse.json({
+      success: true,
+      message: 'Skills retrieved',
+      data: [{ id: 1, skillId: 1, skillName: 'Java', category: 'Backend', proficiency: 'ADVANCED' }],
+    });
+  }),
+  http.get('/api/v1/students/resumes', () => {
+    return HttpResponse.json({
+      success: true,
+      message: 'Resumes retrieved',
+      data: [],
+    });
+  }),
   http.get('/api/v1/students/applications', () => {
     return HttpResponse.json({
       success: true,

@@ -67,16 +67,21 @@ public class JobSpecification {
                 predicates.add(cb.equal(root.get("company").get("id"), criteria.getCompanyId()));
             }
 
-            // 9. Skill IDs filter (subquery avoids row duplication)
+            // Skill IDs filter - ALL selected skills must exist on the job
             if (criteria.getSkillIds() != null && !criteria.getSkillIds().isEmpty()) {
+                List<Long> skillIds = criteria.getSkillIds().stream()
+                .distinct()
+                .toList();
+
                 Subquery<Long> skillSubquery = query.subquery(Long.class);
                 Root<JobSkill> jsRoot = skillSubquery.from(JobSkill.class);
-                skillSubquery.select(jsRoot.get("job").get("id"))
-                        .where(
-                                cb.equal(jsRoot.get("job"), root),
-                                jsRoot.get("skill").get("id").in(criteria.getSkillIds())
-                        );
-                predicates.add(cb.exists(skillSubquery));
+
+                skillSubquery.select(cb.countDistinct(jsRoot.get("skill").get("id")))
+                .where(
+                    cb.equal(jsRoot.get("job"), root),
+                    jsRoot.get("skill").get("id").in(skillIds)
+                );
+                predicates.add(cb.equal(skillSubquery, (long) skillIds.size()));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

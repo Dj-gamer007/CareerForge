@@ -47,14 +47,14 @@ export function MatchPreviewModal({ isOpen, onClose, jobId }: MatchPreviewModalP
               </span>
               <h3 className="text-xl font-bold">Overall Match Score</h3>
               <p className="text-xs text-indigo-200">
-                {match.matchScore >= 75
+                {match.overallScore >= 75
                   ? 'High compatibility: Your technical skills strongly align with the requirements.'
-                  : match.matchScore >= 50
+                  : match.overallScore >= 50
                   ? 'Moderate compatibility: You satisfy core requirements, but some skills may be missing.'
                   : 'Low compatibility: Consider upskilling or targeting other opportunities.'}
               </p>
             </div>
-            <ScoreGauge score={match.matchScore} size="lg" />
+            <ScoreGauge score={match.overallScore} size="lg" />
           </div>
 
           {/* Matched vs Missing Skills */}
@@ -66,18 +66,18 @@ export function MatchPreviewModal({ isOpen, onClose, jobId }: MatchPreviewModalP
                 Matched Skills ({match.matchedSkills?.length || 0})
               </div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {match.matchedSkills?.length === 0 ? (
+                {(match.matchedSkills || []).length === 0 ? (
                   <p className="text-xs text-slate-400">No overlapping skills found</p>
                 ) : (
-                  match.matchedSkills.map((s) => (
+                  (match.matchedSkills || []).map((s) => (
                     <div key={s.skillId} className="p-2.5 bg-white rounded-lg border border-emerald-200/60 text-xs shadow-2xs">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900">{s.skillName}</span>
                         <span className="text-[10px] text-slate-500">{s.studentProficiency}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
-                        <span>Required: {s.jobRequiredProficiency}</span>
-                        <span className="font-semibold text-emerald-600">{(s.scoreMultiplier * 100).toFixed(0)}%</span>
+                        <span>Required: {s.requiredProficiency}</span>
+                        <span className="font-semibold text-emerald-600">{(s.proficiencyMultiplier * 100).toFixed(0)}%</span>
                       </div>
                     </div>
                   ))
@@ -89,25 +89,36 @@ export function MatchPreviewModal({ isOpen, onClose, jobId }: MatchPreviewModalP
             <div className="p-4 rounded-xl border border-rose-100 bg-rose-50/40 space-y-3">
               <div className="flex items-center gap-2 text-rose-800 font-bold text-xs uppercase tracking-wider">
                 <XCircle className="w-4 h-4 text-rose-600" />
-                Missing Competencies ({match.missingSkills?.length || 0})
+                Missing Competencies ({((match.missingRequiredSkills?.length || 0) + (match.missingOptionalSkills?.length || 0))})
               </div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {match.missingSkills?.length === 0 ? (
+                {((match.missingRequiredSkills?.length || 0) + (match.missingOptionalSkills?.length || 0)) === 0 ? (
                   <p className="text-xs text-emerald-700 font-medium">All required skills present in your profile!</p>
                 ) : (
-                  match.missingSkills.map((s) => (
-                    <div key={s.skillId} className="p-2.5 bg-white rounded-lg border border-rose-200/60 text-xs shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900">{s.skillName}</span>
-                        <span className="text-[10px] font-semibold text-rose-600">
-                          {s.isRequired ? 'Mandatory' : 'Optional'}
-                        </span>
+                  <>
+                    {(match.missingRequiredSkills || []).map((s) => (
+                      <div key={s.skillId} className="p-2.5 bg-white rounded-lg border border-rose-200/60 text-xs shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{s.skillName}</span>
+                          <span className="text-[10px] font-semibold text-rose-600">Mandatory</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Target Level: <span className="font-medium text-slate-700">{s.requiredProficiency}</span>
+                        </p>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Target Level: <span className="font-medium text-slate-700">{s.jobRequiredProficiency}</span>
-                      </p>
-                    </div>
-                  ))
+                    ))}
+                    {(match.missingOptionalSkills || []).map((s) => (
+                      <div key={s.skillId} className="p-2.5 bg-white rounded-lg border border-amber-200/60 text-xs shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{s.skillName}</span>
+                          <span className="text-[10px] font-semibold text-amber-600">Optional</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Target Level: <span className="font-medium text-slate-700">{s.requiredProficiency}</span>
+                        </p>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             </div>

@@ -55,14 +55,14 @@ export function StudentSavedJobsPage() {
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {data.content.map((saved: any) => (
+            {data.content.map((saved) => (
               <Card key={saved.id}>
                 <CardContent className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <h3 className="text-base font-bold text-slate-900">{saved.job?.title || 'Saved Job'}</h3>
+                    <h3 className="text-base font-bold text-slate-900">{saved.jobTitle || 'Saved Job'}</h3>
                     <p className="text-xs text-slate-500 flex items-center gap-1.5 font-medium">
                       <Building2 className="w-3.5 h-3.5" />
-                      {saved.job?.company?.name || 'Company'} &bull; {saved.job?.location || 'Remote'}
+                      {saved.companyName || 'Company'} &bull; {saved.location || 'Remote'}
                     </p>
                   </div>
 
@@ -71,12 +71,12 @@ export function StudentSavedJobsPage() {
                       variant="ghost"
                       size="sm"
                       className="text-rose-600 hover:bg-rose-50"
-                      onClick={() => removeMutation.mutate(saved.job?.id || saved.id)}
+                      onClick={() => removeMutation.mutate(saved.jobId)}
                     >
                       <Trash2 className="w-4 h-4 mr-1" />
                       Remove
                     </Button>
-                    <Link to={`/jobs/${saved.job?.slug || saved.job?.id}`}>
+                    <Link to={`/jobs/${saved.jobSlug || saved.jobId}`}>
                       <Button size="sm">
                         View & Apply
                         <ArrowRight className="w-3.5 h-3.5 ml-1" />

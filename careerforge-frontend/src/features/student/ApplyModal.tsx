@@ -24,13 +24,13 @@ export function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyName }: Ap
   const [isSuccess, setIsSuccess] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: profile, isLoading: isProfileLoading } = useQuery({
-    queryKey: queryKeys.student.profile,
-    queryFn: () => studentService.getProfile(),
+  const { data: resumes = [], isLoading: isResumesLoading } = useQuery({
+    queryKey: queryKeys.student.resumes,
+    queryFn: () => studentService.getResumes(),
     enabled: isOpen,
   });
 
-  const activeResume = profile?.resumes?.find((r) => r.isActive);
+  const activeResume = resumes.find((r) => r.active);
 
   const applyMutation = useMutation({
     mutationFn: () =>
@@ -68,7 +68,7 @@ export function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyName }: Ap
       description={isSuccess ? `Your application was sent to ${companyName}` : `Submitting to ${companyName}`}
       maxWidth="md"
     >
-      {isProfileLoading ? (
+      {isResumesLoading ? (
         <LoadingSpinner text="Checking profile & active resume..." />
       ) : isSuccess ? (
         <div className="text-center py-6">

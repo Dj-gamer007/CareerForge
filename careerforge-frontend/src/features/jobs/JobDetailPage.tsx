@@ -20,6 +20,7 @@ import {
   Sparkles,
   Send,
   ArrowLeft,
+  CheckCircle2,
 } from 'lucide-react';
 
 export function JobDetailPage() {
@@ -44,6 +45,18 @@ export function JobDetailPage() {
   });
 
   const isStudent = isAuthenticated && user?.role === 'ROLE_STUDENT';
+
+  // Student applications query to determine applied status
+  const { data: studentApps } = useQuery({
+    queryKey: queryKeys.student.applications(),
+    queryFn: () => applicationService.getStudentApplications({ size: 100 }),
+    enabled: isStudent,
+  });
+
+  const existingApplication = studentApps?.content?.find(
+    (app) => app.jobId === job?.id && app.status !== 'WITHDRAWN'
+  );
+  const hasApplied = !!existingApplication;
 
   // Saved job query
   const { data: isSaved = false } = useQuery({
@@ -181,10 +194,21 @@ export function JobDetailPage() {
                     Check Skill Match
                   </Button>
 
-                  <Button className="w-full justify-center" onClick={() => setIsApplyModalOpen(true)}>
-                    <Send className="w-4 h-4 mr-2" />
-                    Apply Now
-                  </Button>
+                  {hasApplied ? (
+                    <Button
+                      variant="outline"
+                      className="w-full justify-center bg-emerald-50 border-emerald-300 text-emerald-700 font-semibold cursor-default hover:bg-emerald-50"
+                      disabled
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600" />
+                      Applied
+                    </Button>
+                  ) : (
+                    <Button className="w-full justify-center" onClick={() => setIsApplyModalOpen(true)}>
+                      <Send className="w-4 h-4 mr-2" />
+                      Apply Now
+                    </Button>
+                  )}
 
                   <Button
                     variant="ghost"

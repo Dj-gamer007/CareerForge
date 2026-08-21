@@ -7,6 +7,7 @@ import {
   RecruiterApplicationDetailResponse,
   ApplicationStatus,
 } from '@/types/application.types';
+import { SavedJobResponse } from '@/types/job.types';
 
 export const applicationService = {
   // Student Applications
@@ -50,12 +51,12 @@ export const applicationService = {
   },
 
   async isJobSaved(jobId: number): Promise<boolean> {
-    const res = await apiClient.get<ApiResponse<{ saved: boolean }>>(`/students/saved-jobs/${jobId}/check`);
-    return res.data.data.saved;
+    const res = await apiClient.get<ApiResponse<boolean>>(`/students/saved-jobs/${jobId}/check`);
+    return res.data.data;
   },
 
-  async getSavedJobs(params?: { page?: number; size?: number }): Promise<SpringPage<any>> {
-    const res = await apiClient.get<ApiResponse<SpringPage<any>>>('/students/saved-jobs', {
+  async getSavedJobs(params?: { page?: number; size?: number }): Promise<SpringPage<SavedJobResponse>> {
+    const res = await apiClient.get<ApiResponse<SpringPage<SavedJobResponse>>>('/students/saved-jobs', {
       params,
     });
     return res.data.data;

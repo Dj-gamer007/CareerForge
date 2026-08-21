@@ -53,7 +53,8 @@ export interface ResumeResponse {
   fileSize: number;
   contentType: string;
   version: number;
-  isActive: boolean;
+  active: boolean;
+  isActive?: boolean;
   uploadedAt: string;
 }
 

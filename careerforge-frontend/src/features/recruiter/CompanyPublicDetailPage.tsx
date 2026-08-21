@@ -8,6 +8,46 @@ import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { Building2, Globe, CheckCircle2, ArrowLeft } from 'lucide-react';
 
+function getValidExternalWebsiteUrl(rawUrl?: string): string | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.includes('localhost') ||
+    lower.endsWith('.local') ||
+    lower.includes('.local/') ||
+    lower.endsWith('.internal') ||
+    lower.includes('.internal/')
+  ) {
+    return null;
+  }
+
+  const normalized = lower.startsWith('http://') || lower.startsWith('https://')
+    ? trimmed
+    : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      !hostname.includes('.')
+    ) {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
 export function CompanyPublicDetailPage() {
   const { slug } = useParams<{ slug: string }>();
 
@@ -21,6 +61,8 @@ export function CompanyPublicDetailPage() {
     },
     enabled: !!slug,
   });
+
+  const validWebsiteUrl = getValidExternalWebsiteUrl(company?.website);
 
   if (isLoading) return <LoadingSpinner text="Loading company profile..." />;
   if (isError || !company) {
@@ -60,9 +102,9 @@ export function CompanyPublicDetailPage() {
               </div>
             </div>
 
-            {company.website && (
+            {validWebsiteUrl && (
               <a
-                href={company.website}
+                href={validWebsiteUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline"

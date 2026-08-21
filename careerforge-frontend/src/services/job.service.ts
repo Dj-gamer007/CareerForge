@@ -19,10 +19,11 @@ export interface SearchJobParams {
   minSalary?: number;
   maxSalary?: number;
   companyId?: number;
-  skills?: string[];
+  skillIds?: number[];
   page?: number;
   size?: number;
   sort?: string;
+  
 }
 
 export interface CreateJobPayload {
