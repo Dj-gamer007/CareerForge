@@ -24,6 +24,8 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
 
     Optional<Application> findByStudentProfile_IdAndJob_Id(Long studentProfileId, Long jobId);
 
+    java.util.List<Application> findAllByResume(com.careerforge.entity.Resume resume);
+
     @EntityGraph(attributePaths = {"job", "job.company", "resume"})
     Page<Application> findAllByStudentProfile_Id(Long studentProfileId, Pageable pageable);
 

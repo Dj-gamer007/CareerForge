@@ -233,4 +233,106 @@ class JobManagementIntegrationTest {
                         .content(objectMapper.writeValueAsString(updateReq)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Recruiter cannot publish another company's job (404)")
+    void testPublishUnauthorizedJob_ReturnsNotFound() throws Exception {
+        JobCreateRequest createReq = JobCreateRequest.builder()
+                .title("TechCorp Private Job")
+                .description("Private description for TechCorp.")
+                .location("Hyderabad")
+                .workMode(WorkMode.ONSITE)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.SENIOR_LEVEL)
+                .build();
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", recruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JobDetailResponse createdJob = objectMapper.readValue(
+                objectMapper.readTree(createResult.getResponse().getContentAsString()).get("data").toString(),
+                JobDetailResponse.class
+        );
+
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJob.getId() + "/publish")
+                        .header("Authorization", otherRecruiterToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Publishing non-existent job returns 404")
+    void testPublishNonExistentJob_ReturnsNotFound() throws Exception {
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/999999/publish")
+                        .header("Authorization", recruiterToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Creating job with 1 skill and publishing on first attempt succeeds")
+    void testCreateJobWithSkill_PublishFirstTime_Succeeds() throws Exception {
+        String jobJson = "{" +
+                "\"title\":\"Senior React Developer\"," +
+                "\"description\":\"Expert React Engineer with TypeScript and state management.\"," +
+                "\"location\":\"Bengaluru, India\"," +
+                "\"workMode\":\"REMOTE\"," +
+                "\"jobType\":\"FULL_TIME\"," +
+                "\"experienceLevel\":\"SENIOR_LEVEL\"," +
+                "\"skills\":[{\"skillId\":" + javaSkill.getId() + ",\"required\":true,\"minimumProficiency\":\"INTERMEDIATE\"}]" +
+                "}";
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", recruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jobJson))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JobDetailResponse createdJob = objectMapper.readValue(
+                objectMapper.readTree(createResult.getResponse().getContentAsString()).get("data").toString(),
+                JobDetailResponse.class
+        );
+
+        // Publish for the first time
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJob.getId() + "/publish")
+                        .header("Authorization", recruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+    }
+
+    @Test
+    @DisplayName("Publishing job with zero skills fails validation (400 Bad Request)")
+    void testPublishJobWithZeroSkills_FailsValidation() throws Exception {
+        JobCreateRequest createReq = JobCreateRequest.builder()
+                .title("No Skills Job")
+                .description("Job without any skills attached.")
+                .location("Bengaluru, India")
+                .workMode(WorkMode.ONSITE)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.ENTRY_LEVEL)
+                .skills(List.of())
+                .build();
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", recruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JobDetailResponse createdJob = objectMapper.readValue(
+                objectMapper.readTree(createResult.getResponse().getContentAsString()).get("data").toString(),
+                JobDetailResponse.class
+        );
+
+        // Attempting to publish must fail with 400
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJob.getId() + "/publish")
+                        .header("Authorization", recruiterToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("at least one required skill")));
+    }
 }

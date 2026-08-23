@@ -66,6 +66,9 @@ public class Application extends BaseEntity {
     @Column(name = "interview_scheduled_at")
     private LocalDateTime interviewScheduledAt;
 
+    @Column(name = "shortlisted_at")
+    private LocalDateTime shortlistedAt;
+
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
 

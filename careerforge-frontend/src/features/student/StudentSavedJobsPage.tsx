@@ -9,11 +9,12 @@ import { PaginationControls } from '@/components/table/PaginationControls';
 import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Bookmark, Building2, Trash2, ArrowRight } from 'lucide-react';
 
 export function StudentSavedJobsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [page, setPage] = useState(0);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -23,7 +24,10 @@ export function StudentSavedJobsPage() {
 
   const removeMutation = useMutation({
     mutationFn: (jobId: number) => applicationService.removeSavedJob(jobId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.student.savedJobs() }),
+    onSuccess: (_, jobId) => {
+      queryClient.invalidateQueries({ queryKey: ['student', 'saved-jobs'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.student.isSaved(jobId) });
+    },
   });
 
   if (isLoading) return <LoadingSpinner text="Loading your bookmarks..." />;
@@ -50,7 +54,7 @@ export function StudentSavedJobsPage() {
           title="No bookmarks saved"
           description="You haven't bookmarked any jobs yet. Browse public jobs to save interesting opportunities."
           actionText="Explore Jobs"
-          onAction={() => {}}
+          onAction={() => navigate('/jobs')}
         />
       ) : (
         <div className="space-y-4">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { applicationService } from '@/services/application.service';
@@ -50,6 +50,7 @@ export function RecruiterATSPage() {
   // Candidate dossier drawer
   const [isDossierOpen, setIsDossierOpen] = useState(false);
   const [recruiterNotes, setRecruiterNotes] = useState('');
+  const [notesFeedback, setNotesFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: job } = useQuery({
     queryKey: queryKeys.recruiter.jobDetail(parsedJobId),
@@ -69,6 +70,13 @@ export function RecruiterATSPage() {
     enabled: !!selectedAppId && isDossierOpen,
   });
 
+  // Keep recruiterNotes synchronized when appDetail loads or changes
+  useEffect(() => {
+    if (appDetail) {
+      setRecruiterNotes(appDetail.recruiterNotes || '');
+    }
+  }, [appDetail]);
+
   // Mutations
   const updateStatusMutation = useMutation({
     mutationFn: ({ appId, status, interviewScheduledAt }: any) =>
@@ -86,9 +94,18 @@ export function RecruiterATSPage() {
   });
 
   const saveNotesMutation = useMutation({
-    mutationFn: ({ appId, notes }: any) => applicationService.updateApplicationNotes(appId, notes),
+    mutationFn: ({ appId, notes }: { appId: number; notes: string }) =>
+      applicationService.updateApplicationNotes(appId, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.applicationDetail(selectedAppId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.applications(parsedJobId) });
+      setNotesFeedback({ type: 'success', message: 'Internal notes saved successfully.' });
+    },
+    onError: (err: any) => {
+      setNotesFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Failed to save internal notes.',
+      });
     },
   });
 
@@ -101,6 +118,7 @@ export function RecruiterATSPage() {
 
   const openDossier = (app: RecruiterApplicationResponse) => {
     setSelectedAppId(app.id);
+    setNotesFeedback(null);
     setIsDossierOpen(true);
   };
 
@@ -382,10 +400,34 @@ export function RecruiterATSPage() {
                 <MessageSquare className="w-3.5 h-3.5" />
                 Confidential Recruiter Notes (Private)
               </h4>
+
+              {notesFeedback && (
+                <div
+                  role="alert"
+                  className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                    notesFeedback.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  <span>{notesFeedback.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => setNotesFeedback(null)}
+                    className="text-[11px] font-semibold underline ml-2"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
               <Textarea
                 placeholder="Internal interview remarks, salary negotiations, or candidate ratings (strictly hidden from candidate)..."
-                defaultValue={appDetail.recruiterNotes || ''}
-                onChange={(e) => setRecruiterNotes(e.target.value)}
+                value={recruiterNotes}
+                onChange={(e) => {
+                  setRecruiterNotes(e.target.value);
+                  setNotesFeedback(null);
+                }}
                 rows={3}
               />
               <div className="flex justify-end">
@@ -394,8 +436,9 @@ export function RecruiterATSPage() {
                   variant="outline"
                   onClick={() => saveNotesMutation.mutate({ appId: appDetail.id, notes: recruiterNotes })}
                   isLoading={saveNotesMutation.isPending}
+                  disabled={saveNotesMutation.isPending}
                 >
-                  Save Internal Notes
+                  {saveNotesMutation.isPending ? 'Saving...' : 'Save Internal Notes'}
                 </Button>
               </div>
             </div>

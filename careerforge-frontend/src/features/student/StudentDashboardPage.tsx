@@ -69,6 +69,7 @@ export function StudentDashboardPage() {
         page: 0,
         size: 5,
       }),
+    refetchInterval: 3000,
   });
 
   // ------------------------------------------------------------

@@ -48,7 +48,7 @@ export function JobDetailPage() {
 
   // Student applications query to determine applied status
   const { data: studentApps } = useQuery({
-    queryKey: queryKeys.student.applications(),
+    queryKey: ['student', 'applications'],
     queryFn: () => applicationService.getStudentApplications({ size: 100 }),
     enabled: isStudent,
   });
@@ -75,8 +75,9 @@ export function JobDetailPage() {
       }
     },
     onSuccess: () => {
+      queryClient.setQueryData(queryKeys.student.isSaved(job!.id), !isSaved);
       queryClient.invalidateQueries({ queryKey: queryKeys.student.isSaved(job!.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.student.savedJobs() });
+      queryClient.invalidateQueries({ queryKey: ['student', 'saved-jobs'] });
     },
   });
 

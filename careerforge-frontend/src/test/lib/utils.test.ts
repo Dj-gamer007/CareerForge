@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCurrency, formatDate, formatPercentage, formatFileSize } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateTime, parseDate, formatPercentage, formatFileSize } from '@/lib/utils';
 
 describe('Format Utility Functions', () => {
   it('formats currency correctly', () => {
@@ -10,6 +10,13 @@ describe('Format Utility Functions', () => {
   it('formats dates properly', () => {
     expect(formatDate('2026-08-19T12:00:00')).toContain('2026');
     expect(formatDate(undefined)).toBe('N/A');
+  });
+
+  it('parses and formats datetime with UTC normalization', () => {
+    const parsed = parseDate('2026-08-23T13:06:00');
+    expect(parsed).not.toBeNull();
+    expect(formatDateTime('2026-08-23T13:06:00')).toContain('2026');
+    expect(formatDateTime(undefined)).toBe('N/A');
   });
 
   it('formats percentages properly', () => {

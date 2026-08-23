@@ -1,6 +1,8 @@
 package com.careerforge.dto.request;
 
 import com.careerforge.entity.enums.SkillProficiency;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,6 +19,8 @@ public class JobSkillItemRequest {
     private Long skillId;
 
     @Builder.Default
+    @JsonProperty("required")
+    @JsonAlias({"required", "isRequired", "is_required"})
     private boolean isRequired = true;
 
     @NotNull(message = "Minimum proficiency is required")

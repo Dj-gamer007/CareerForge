@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -67,6 +68,7 @@ public class CompanyController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<CompanySummaryResponse>>> getVerifiedCompanies(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String name,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "name") String sortBy,
@@ -76,7 +78,8 @@ public class CompanyController {
                 Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        PagedResponse<CompanySummaryResponse> response = companyService.getVerifiedCompanies(search, pageable);
+        String searchTerm = StringUtils.hasText(search) ? search : name;
+        PagedResponse<CompanySummaryResponse> response = companyService.getVerifiedCompanies(searchTerm, pageable);
         return ResponseEntity.ok(ApiResponse.success("Companies retrieved successfully", response));
     }
 }

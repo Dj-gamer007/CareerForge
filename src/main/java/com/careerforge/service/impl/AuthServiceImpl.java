@@ -11,11 +11,14 @@ import com.careerforge.entity.User;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.exception.ResourceNotFoundException;
 import com.careerforge.exception.TokenRefreshException;
+import com.careerforge.entity.enums.Role;
 import com.careerforge.repository.UserRepository;
 import com.careerforge.security.JwtTokenProvider;
 import com.careerforge.security.UserPrincipal;
 import com.careerforge.service.AuthService;
 import com.careerforge.service.RefreshTokenService;
+import com.careerforge.service.StudentProfileService;
+import com.careerforge.service.RecruiterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -34,6 +37,8 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
+    private final StudentProfileService studentProfileService;
+    private final RecruiterService recruiterService;
 
     @Override
     @Transactional
@@ -50,6 +55,14 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
+
+        // Auto-provision persona profile
+        if (savedUser.getRole() == Role.ROLE_STUDENT) {
+            studentProfileService.getOrCreateProfileEntity(savedUser.getId());
+        } else if (savedUser.getRole() == Role.ROLE_RECRUITER) {
+            recruiterService.getOrCreateProfileEntity(savedUser.getId());
+        }
+
         UserPrincipal userPrincipal = UserPrincipal.create(savedUser);
 
         String accessToken = jwtTokenProvider.generateAccessToken(userPrincipal);

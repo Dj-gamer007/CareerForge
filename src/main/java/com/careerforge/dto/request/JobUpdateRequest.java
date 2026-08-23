@@ -31,7 +31,6 @@ public class JobUpdateRequest {
     @Size(min = 10, message = "Job description must be at least 10 characters")
     private String description;
 
-    @NotBlank(message = "Location is required")
     @Size(max = 150, message = "Location must not exceed 150 characters")
     private String location;
 

@@ -35,9 +35,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public StudentProfileResponse getProfileByUserId(Long userId) {
-        StudentProfile profile = getProfileEntityByUserId(userId);
+        StudentProfile profile = getOrCreateProfileEntity(userId);
         return mapToProfileResponse(profile);
     }
 
@@ -137,9 +137,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<StudentSkillResponse> getSkills(Long userId) {
-        StudentProfile profile = getProfileEntityByUserId(userId);
+        StudentProfile profile = getOrCreateProfileEntity(userId);
         return studentSkillRepository.findAllByStudentProfileWithSkill(profile)
                 .stream()
                 .map(this::mapToSkillResponse)
@@ -202,9 +202,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<EducationResponse> getEducationList(Long userId) {
-        StudentProfile profile = getProfileEntityByUserId(userId);
+        StudentProfile profile = getOrCreateProfileEntity(userId);
         return educationRepository.findAllByStudentProfileOrderByStartDateDesc(profile)
                 .stream()
                 .map(this::mapToEducationResponse)
@@ -271,9 +271,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ProjectResponse> getProjectList(Long userId) {
-        StudentProfile profile = getProfileEntityByUserId(userId);
+        StudentProfile profile = getOrCreateProfileEntity(userId);
         return projectRepository.findAllByStudentProfileOrderByStartDateDesc(profile)
                 .stream()
                 .map(this::mapToProjectResponse)
@@ -340,9 +340,9 @@ public class StudentProfileServiceImpl implements StudentProfileService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<CertificationResponse> getCertificationList(Long userId) {
-        StudentProfile profile = getProfileEntityByUserId(userId);
+        StudentProfile profile = getOrCreateProfileEntity(userId);
         return certificationRepository.findAllByStudentProfileOrderByIssueDateDesc(profile)
                 .stream()
                 .map(this::mapToCertificationResponse)

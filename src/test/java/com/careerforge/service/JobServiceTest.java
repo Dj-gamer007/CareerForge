@@ -123,7 +123,7 @@ class JobServiceTest {
                 ))
                 .build();
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.existsBySlug(anyString())).thenReturn(false);
         when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
             Job j = invocation.getArgument(0);
@@ -159,7 +159,7 @@ class JobServiceTest {
                 .salaryMax(new BigDecimal("1000000"))
                 .build();
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
 
         assertThatThrownBy(() -> jobService.createJob(2L, request))
                 .isInstanceOf(BadRequestException.class)
@@ -169,7 +169,7 @@ class JobServiceTest {
     @Test
     @DisplayName("Should publish draft job when requirements and future deadline are met")
     void testPublishJob_Success() {
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobSkillRepository.countByJobAndIsRequiredTrue(testJob)).thenReturn(1L);
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
@@ -187,7 +187,7 @@ class JobServiceTest {
     void testPublishJob_PastDeadline() {
         testJob.setDeadline(LocalDateTime.now().minusDays(1));
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
 
         assertThatThrownBy(() -> jobService.publishJob(2L, 100L))
@@ -198,7 +198,7 @@ class JobServiceTest {
     @Test
     @DisplayName("Should reject publishing job without required skills")
     void testPublishJob_NoRequiredSkills() {
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobSkillRepository.countByJobAndIsRequiredTrue(testJob)).thenReturn(0L);
 
@@ -212,7 +212,7 @@ class JobServiceTest {
     void testUnpublishJob_Success() {
         testJob.setStatus(JobStatus.PUBLISHED);
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
         when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(Collections.emptyList());
@@ -228,7 +228,7 @@ class JobServiceTest {
     void testCloseJob_Success() {
         testJob.setStatus(JobStatus.PUBLISHED);
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
         when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(Collections.emptyList());
@@ -245,7 +245,7 @@ class JobServiceTest {
         testJob.setStatus(JobStatus.CLOSED);
         testJob.setDeadline(LocalDateTime.now().plusDays(10));
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
         when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(Collections.emptyList());
@@ -261,7 +261,7 @@ class JobServiceTest {
     void testArchiveJob_Success() {
         testJob.setStatus(JobStatus.CLOSED);
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
         when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(Collections.emptyList());
@@ -277,7 +277,7 @@ class JobServiceTest {
     void testDeleteJob_RejectPublished() {
         testJob.setStatus(JobStatus.PUBLISHED);
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
 
         assertThatThrownBy(() -> jobService.deleteJob(2L, 100L))
@@ -291,7 +291,7 @@ class JobServiceTest {
         Company otherCompany = Company.builder().id(999L).name("Other Corp").build();
         testJob.setCompany(otherCompany);
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
 
         assertThatThrownBy(() -> jobService.getJobDetailForRecruiter(2L, 100L))

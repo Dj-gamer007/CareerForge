@@ -2,6 +2,7 @@ package com.careerforge.service;
 
 import com.careerforge.config.StorageConfigProperties;
 import com.careerforge.dto.response.ResumeResponse;
+import com.careerforge.entity.Application;
 import com.careerforge.entity.Resume;
 import com.careerforge.entity.StudentProfile;
 import com.careerforge.entity.User;
@@ -40,6 +41,8 @@ class ResumeServiceTest {
     private ResumeRepository resumeRepository;
     @Mock
     private StudentProfileService studentProfileService;
+    @Mock
+    private com.careerforge.repository.ApplicationRepository applicationRepository;
     @Mock
     private StorageService storageService;
     @Spy
@@ -189,8 +192,9 @@ class ResumeServiceTest {
     @Test
     @DisplayName("Should delete resume from storage and database")
     void testDeleteResume_Success() {
-        when(studentProfileService.getProfileEntityByUserId(1L)).thenReturn(testProfile);
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(testProfile);
         when(resumeRepository.findByIdAndStudentProfile(100L, testProfile)).thenReturn(Optional.of(testResume));
+        when(applicationRepository.findAllByResume(testResume)).thenReturn(Collections.emptyList());
         when(resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(testProfile)).thenReturn(Collections.emptyList());
 
         resumeService.deleteResume(1L, 100L);
@@ -198,5 +202,60 @@ class ResumeServiceTest {
         verify(storageService).delete("uuid-12345.pdf");
         verify(resumeRepository).delete(testResume);
         verify(studentProfileService).updateProfileCompletion(testProfile);
+    }
+
+    @Test
+    @DisplayName("Should delete active resume and automatically activate next newest resume")
+    void testDeleteActiveResume_ActivatesNextRemainingResume() {
+        Resume nextResume = Resume.builder()
+                .id(101L)
+                .studentProfile(testProfile)
+                .originalFileName("second_resume.pdf")
+                .storedFileName("uuid-67890.pdf")
+                .isActive(false)
+                .build();
+
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(testProfile);
+        when(resumeRepository.findByIdAndStudentProfile(100L, testProfile)).thenReturn(Optional.of(testResume));
+        when(applicationRepository.findAllByResume(testResume)).thenReturn(Collections.emptyList());
+        when(resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(testProfile)).thenReturn(List.of(nextResume));
+
+        resumeService.deleteResume(1L, 100L);
+
+        verify(storageService).delete("uuid-12345.pdf");
+        verify(resumeRepository).delete(testResume);
+        assertThat(nextResume.isActive()).isTrue();
+        verify(resumeRepository).save(nextResume);
+        verify(studentProfileService).updateProfileCompletion(testProfile);
+    }
+
+    @Test
+    @DisplayName("Should reassign linked applications when deleting resume if other resumes exist")
+    void testDeleteResume_ReassignsLinkedApplications() {
+        Resume nextResume = Resume.builder()
+                .id(101L)
+                .studentProfile(testProfile)
+                .originalFileName("second_resume.pdf")
+                .storedFileName("uuid-67890.pdf")
+                .isActive(false)
+                .build();
+
+        Application linkedApp = Application.builder()
+                .id(50L)
+                .studentProfile(testProfile)
+                .resume(testResume)
+                .build();
+
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(testProfile);
+        when(resumeRepository.findByIdAndStudentProfile(100L, testProfile)).thenReturn(Optional.of(testResume));
+        when(applicationRepository.findAllByResume(testResume)).thenReturn(List.of(linkedApp));
+        when(resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(testProfile)).thenReturn(List.of(nextResume));
+
+        resumeService.deleteResume(1L, 100L);
+
+        assertThat(linkedApp.getResume()).isEqualTo(nextResume);
+        verify(applicationRepository).saveAll(List.of(linkedApp));
+        verify(resumeRepository).delete(testResume);
+        verify(storageService).delete("uuid-12345.pdf");
     }
 }

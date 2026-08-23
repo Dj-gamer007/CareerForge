@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -55,5 +56,63 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.accessToken").exists())
                 .andExpect(jsonPath("$.data.refreshToken").exists());
+    }
+
+    @Test
+    void testRegisterStudent_AutoProvisionsStudentProfile() throws Exception {
+        RegisterRequest registerRequest = RegisterRequest.builder()
+                .email("autostudent@careerforge.local")
+                .password("DevPass123!")
+                .role(Role.ROLE_STUDENT)
+                .build();
+
+        String responseJson = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(registerRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String token = objectMapper.readTree(responseJson).get("data").get("accessToken").asText();
+
+        // Immediately fetch profile using token without manual profile creation
+        mockMvc.perform(get("/api/v1/students/profile")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.email").value("autostudent@careerforge.local"))
+                .andExpect(jsonPath("$.data.firstName").value("Student"))
+                .andExpect(jsonPath("$.data.lastName").value("User"));
+    }
+
+    @Test
+    void testRegisterRecruiter_AutoProvisionsRecruiterProfile() throws Exception {
+        RegisterRequest registerRequest = RegisterRequest.builder()
+                .email("autorecruiter@careerforge.local")
+                .password("DevPass123!")
+                .role(Role.ROLE_RECRUITER)
+                .build();
+
+        String responseJson = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(registerRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String token = objectMapper.readTree(responseJson).get("data").get("accessToken").asText();
+
+        // Immediately fetch profile using token without manual profile creation
+        mockMvc.perform(get("/api/v1/recruiters/profile")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.email").value("autorecruiter@careerforge.local"))
+                .andExpect(jsonPath("$.data.firstName").value("Recruiter"))
+                .andExpect(jsonPath("$.data.lastName").value("User"));
     }
 }

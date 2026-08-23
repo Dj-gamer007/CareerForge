@@ -133,7 +133,7 @@ class CompanyServiceTest {
                 .industry("Fintech")
                 .build();
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
 
         assertThatThrownBy(() -> companyService.updateMyCompany(2L, request))
                 .isInstanceOf(UnauthorizedException.class)
@@ -151,7 +151,7 @@ class CompanyServiceTest {
                 .location("New York, NY")
                 .build();
 
-        when(recruiterService.getProfileEntityByUserId(2L)).thenReturn(recruiterProfile);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(companyRepository.save(any(Company.class))).thenReturn(testCompany);
 
         CompanyResponse response = companyService.updateMyCompany(2L, request);

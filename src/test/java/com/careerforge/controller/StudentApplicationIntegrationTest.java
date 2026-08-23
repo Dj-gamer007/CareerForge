@@ -234,4 +234,232 @@ class StudentApplicationIntegrationTest {
                         .header("Authorization", recruiterToken))
                 .andExpect(status().isForbidden());
     }
+
+    private void assertStageVisibility(String token, boolean applied, boolean underReview, boolean shortlisted, boolean interviewScheduled, boolean accepted, boolean rejected, boolean withdrawn) throws Exception {
+        // All Statuses must always show the application exactly once
+        mockMvc.perform(get("/api/v1/students/applications").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(1)));
+
+        // Filtered statuses: single source of truth
+        mockMvc.perform(get("/api/v1/students/applications?status=APPLIED").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(applied ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=UNDER_REVIEW").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(underReview ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=SHORTLISTED").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(shortlisted ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=INTERVIEW_SCHEDULED").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(interviewScheduled ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=ACCEPTED").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(accepted ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=REJECTED").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(rejected ? 1 : 0)));
+
+        mockMvc.perform(get("/api/v1/students/applications?status=WITHDRAWN").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(withdrawn ? 1 : 0)));
+    }
+
+    @Test
+    @DisplayName("Case 1: APPLIED -> UNDER_REVIEW -> SHORTLISTED -> INTERVIEW_SCHEDULED -> ACCEPTED")
+    void testCase1_Applied_UnderReview_Shortlisted_Interview_Accepted() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C1").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Initial APPLIED
+        assertStageVisibility(studentToken1, true, false, false, false, false, false, false);
+
+        // UNDER_REVIEW
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        assertStageVisibility(studentToken1, false, true, false, false, false, false, false);
+
+        // SHORTLISTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        assertStageVisibility(studentToken1, false, false, true, false, false, false, false);
+
+        // INTERVIEW_SCHEDULED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+        assertStageVisibility(studentToken1, false, false, false, true, false, false, false);
+
+        // ACCEPTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACCEPTED\"}")).andExpect(status().isOk());
+        assertStageVisibility(studentToken1, false, false, false, false, true, false, false);
+    }
+
+    @Test
+    @DisplayName("Case 2: APPLIED -> UNDER_REVIEW -> REJECTED")
+    void testCase2_Applied_UnderReview_Rejected() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C2").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"REJECTED\"}")).andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, false, false, false, false, true, false);
+    }
+
+    @Test
+    @DisplayName("Case 3: APPLIED -> UNDER_REVIEW -> WITHDRAWN")
+    void testCase3_Applied_UnderReview_Withdrawn() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C3").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/students/applications/" + appId + "/withdraw").header("Authorization", studentToken1))
+                .andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, false, false, false, false, false, true);
+    }
+
+    @Test
+    @DisplayName("Case 4: APPLIED -> REJECTED")
+    void testCase4_Applied_Rejected() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C4").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"REJECTED\"}")).andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, false, false, false, false, true, false);
+    }
+
+    @Test
+    @DisplayName("Case 5: APPLIED -> WITHDRAWN")
+    void testCase5_Applied_Withdrawn() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C5").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/students/applications/" + appId + "/withdraw").header("Authorization", studentToken1))
+                .andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, false, false, false, false, false, true);
+    }
+
+    @Test
+    @DisplayName("Case 6: APPLIED -> UNDER_REVIEW -> SHORTLISTED -> INTERVIEW_SCHEDULED")
+    void testCase6_Applied_UnderReview_Shortlisted_InterviewScheduled() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C6").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, false, false, true, false, false, false);
+    }
+
+    @Test
+    @DisplayName("Case 7: APPLIED -> UNDER_REVIEW")
+    void testCase7_Applied_UnderReview() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("C7").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+
+        assertStageVisibility(studentToken1, false, true, false, false, false, false, false);
+    }
+
+    @Test
+    @DisplayName("Direct transition APPLIED -> SHORTLISTED is rejected (UNDER_REVIEW is mandatory)")
+    void testDirectAppliedToShortlistedIsRejected() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Direct Shortlist Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // APPLIED -> SHORTLISTED directly must fail with 400 Bad Request
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Withdrawal is permitted from SHORTLISTED and INTERVIEW_SCHEDULED states")
+    void testWithdrawalFromShortlistedAndInterviewScheduled() throws Exception {
+        // Test withdrawal from SHORTLISTED
+        ApplicationSubmitRequest req1 = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("W_SHORTLISTED").build();
+        MvcResult res1 = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req1)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId1 = objectMapper.readTree(res1.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId1 + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId1 + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/students/applications/" + appId1 + "/withdraw").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
+
+        assertStageVisibility(studentToken1, false, false, false, false, false, false, true);
+    }
+
+    @Test
+    @DisplayName("Historical timestamps (shortlistedAt, interviewScheduledAt) are retained on ACCEPTED")
+    void testHistoricalTimestampsRetainedOnAccepted() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Timestamps Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACCEPTED\"}")).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/students/applications/" + appId).header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.data.interviewScheduledAt").exists());
+    }
 }

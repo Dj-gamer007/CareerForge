@@ -41,7 +41,8 @@ export function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyName }: Ap
       }),
     onSuccess: () => {
       setIsSuccess(true);
-      queryClient.invalidateQueries({ queryKey: queryKeys.student.applications() });
+      queryClient.invalidateQueries({ queryKey: ['student', 'applications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
     onError: (err: any) => {
       setErrorMsg(err.response?.data?.message || 'Failed to submit application. Please try again.');

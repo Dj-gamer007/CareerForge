@@ -13,9 +13,11 @@ import com.careerforge.exception.ResourceNotFoundException;
 import com.careerforge.repository.*;
 import com.careerforge.service.ApplicationService;
 import com.careerforge.service.NotificationService;
+import com.careerforge.service.RecruiterService;
 import com.careerforge.service.ResumeService;
 import com.careerforge.service.SkillMatchingService;
 import com.careerforge.service.StorageService;
+import com.careerforge.service.StudentProfileService;
 import com.careerforge.specification.ApplicationSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,9 +43,11 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final StudentProfileService studentProfileService;
     private final JobRepository jobRepository;
     private final ResumeRepository resumeRepository;
     private final RecruiterProfileRepository recruiterProfileRepository;
+    private final RecruiterService recruiterService;
     private final SkillMatchingService skillMatchingService;
     private final NotificationService notificationService;
     private final StorageService storageService;
@@ -70,8 +77,10 @@ public class ApplicationServiceImpl implements ApplicationService {
             throw new BadRequestException("The application deadline for this job has passed (" + job.getDeadline() + ")");
         }
 
-        if (applicationRepository.existsByStudentProfile_IdAndJob_Id(studentProfile.getId(), job.getId())) {
-            throw new BadRequestException("You have already submitted an application for this job");
+        // Check existing application status for re-application eligibility
+        Optional<Application> existingAppOpt = applicationRepository.findByStudentProfile_IdAndJob_Id(studentProfile.getId(), job.getId());
+        if (existingAppOpt.isPresent() && existingAppOpt.get().getStatus() != ApplicationStatus.WITHDRAWN) {
+            throw new BadRequestException("You have already submitted an active application for this job");
         }
 
         // Resolve resume
@@ -88,14 +97,28 @@ public class ApplicationServiceImpl implements ApplicationService {
         SkillMatchResponse matchAnalysis = skillMatchingService.calculateMatchForStudentAndJob(studentProfile.getId(), job.getId());
         BigDecimal matchScoreSnapshot = matchAnalysis.getOverallScore();
 
-        Application application = Application.builder()
-                .studentProfile(studentProfile)
-                .job(job)
-                .resume(resume)
-                .status(ApplicationStatus.APPLIED)
-                .coverLetter(request.getCoverLetter() != null ? request.getCoverLetter().trim() : null)
-                .matchScoreAtApplication(matchScoreSnapshot)
-                .build();
+        Application application;
+        if (existingAppOpt.isPresent()) {
+            // Reactivate withdrawn application with fresh snapshot
+            application = existingAppOpt.get();
+            application.setResume(resume);
+            application.setStatus(ApplicationStatus.APPLIED);
+            application.setCoverLetter(request.getCoverLetter() != null ? request.getCoverLetter().trim() : null);
+            application.setMatchScoreAtApplication(matchScoreSnapshot);
+            application.setWithdrawnAt(null);
+            application.setReviewedAt(null);
+            application.setInterviewScheduledAt(null);
+            application.setRecruiterNotes(null);
+        } else {
+            application = Application.builder()
+                    .studentProfile(studentProfile)
+                    .job(job)
+                    .resume(resume)
+                    .status(ApplicationStatus.APPLIED)
+                    .coverLetter(request.getCoverLetter() != null ? request.getCoverLetter().trim() : null)
+                    .matchScoreAtApplication(matchScoreSnapshot)
+                    .build();
+        }
 
         Application saved = applicationRepository.save(application);
         log.info("Application submitted successfully (id: {}) by student ID: {} for job ID: {}",
@@ -116,9 +139,8 @@ public class ApplicationServiceImpl implements ApplicationService {
     @Transactional(readOnly = true)
     public PagedResponse<StudentApplicationResponse> getMyApplications(Long userId, ApplicationStatus status, Pageable pageable) {
         StudentProfile studentProfile = getStudentProfileByUserId(userId);
-        Page<Application> page = (status != null) ?
-                applicationRepository.findAllByStudentProfile_IdAndStatus(studentProfile.getId(), status, pageable) :
-                applicationRepository.findAllByStudentProfile_Id(studentProfile.getId(), pageable);
+        Specification<Application> spec = ApplicationSpecification.buildStudentSpecification(studentProfile.getId(), status);
+        Page<Application> page = applicationRepository.findAll(spec, pageable);
 
         List<StudentApplicationResponse> responses = page.getContent().stream()
                 .map(this::mapToStudentResponse)
@@ -151,7 +173,10 @@ public class ApplicationServiceImpl implements ApplicationService {
             throw new BadRequestException("Application is already withdrawn");
         }
 
-        if (application.getStatus() != ApplicationStatus.APPLIED && application.getStatus() != ApplicationStatus.UNDER_REVIEW) {
+        if (application.getStatus() != ApplicationStatus.APPLIED
+                && application.getStatus() != ApplicationStatus.UNDER_REVIEW
+                && application.getStatus() != ApplicationStatus.SHORTLISTED
+                && application.getStatus() != ApplicationStatus.INTERVIEW_SCHEDULED) {
             throw new BadRequestException("Applications in status '" + application.getStatus() + "' cannot be withdrawn");
         }
 
@@ -248,6 +273,10 @@ public class ApplicationServiceImpl implements ApplicationService {
             if (application.getReviewedAt() == null) {
                 application.setReviewedAt(LocalDateTime.now());
             }
+        } else if (targetStatus == ApplicationStatus.SHORTLISTED) {
+            if (application.getShortlistedAt() == null) {
+                application.setShortlistedAt(LocalDateTime.now());
+            }
         } else if (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED) {
             if (request.getInterviewScheduledAt() == null) {
                 throw new BadRequestException("interviewScheduledAt is required when scheduling an interview");
@@ -270,11 +299,14 @@ public class ApplicationServiceImpl implements ApplicationService {
         // Notify candidate
         Long candidateUserId = application.getStudentProfile().getUser().getId();
         if (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED) {
+            String formattedInterviewTime = application.getInterviewScheduledAt() != null
+                    ? application.getInterviewScheduledAt().format(DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' h:mm a", Locale.ENGLISH))
+                    : "TBD";
             notificationService.sendNotification(
                     candidateUserId,
                     "Interview Invitation: " + application.getJob().getTitle(),
                     "Congratulations! An interview has been scheduled for '" + application.getJob().getTitle() +
-                            "' at " + application.getJob().getCompany().getName() + " on " + application.getInterviewScheduledAt() + ".",
+                            "' at " + application.getJob().getCompany().getName() + " on " + formattedInterviewTime + ".",
                     NotificationType.INTERVIEW_INVITE
             );
         } else {
@@ -300,7 +332,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         Application application = applicationRepository.findByIdAndJob_Company_Id(applicationId, recruiter.getCompany().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Application", "id", applicationId));
 
-        application.setRecruiterNotes(request.getRecruiterNotes().trim());
+        application.setRecruiterNotes(request.getRecruiterNotes() != null ? request.getRecruiterNotes().trim() : "");
         Application saved = applicationRepository.save(application);
         log.info("Updated recruiter notes for application ID: {} by user ID: {}", applicationId, userId);
 
@@ -346,10 +378,10 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
 
         boolean valid = switch (currentStatus) {
-            case APPLIED -> (targetStatus == ApplicationStatus.UNDER_REVIEW || targetStatus == ApplicationStatus.WITHDRAWN);
-            case UNDER_REVIEW -> (targetStatus == ApplicationStatus.SHORTLISTED || targetStatus == ApplicationStatus.WITHDRAWN);
-            case SHORTLISTED -> (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED || targetStatus == ApplicationStatus.REJECTED);
-            case INTERVIEW_SCHEDULED -> (targetStatus == ApplicationStatus.ACCEPTED || targetStatus == ApplicationStatus.REJECTED);
+            case APPLIED -> (targetStatus == ApplicationStatus.UNDER_REVIEW || targetStatus == ApplicationStatus.REJECTED || targetStatus == ApplicationStatus.WITHDRAWN);
+            case UNDER_REVIEW -> (targetStatus == ApplicationStatus.SHORTLISTED || targetStatus == ApplicationStatus.REJECTED || targetStatus == ApplicationStatus.WITHDRAWN);
+            case SHORTLISTED -> (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED || targetStatus == ApplicationStatus.REJECTED || targetStatus == ApplicationStatus.WITHDRAWN);
+            case INTERVIEW_SCHEDULED -> (targetStatus == ApplicationStatus.ACCEPTED || targetStatus == ApplicationStatus.REJECTED || targetStatus == ApplicationStatus.WITHDRAWN);
             default -> false;
         };
 
@@ -359,13 +391,11 @@ public class ApplicationServiceImpl implements ApplicationService {
     }
 
     private StudentProfile getStudentProfileByUserId(Long userId) {
-        return studentProfileRepository.findByUser_Id(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("StudentProfile", "userId", userId));
+        return studentProfileService.getOrCreateProfileEntity(userId);
     }
 
     private RecruiterProfile getValidatedRecruiterWithCompany(Long userId) {
-        RecruiterProfile recruiter = recruiterProfileRepository.findByUser_Id(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("RecruiterProfile", "userId", userId));
+        RecruiterProfile recruiter = recruiterService.getOrCreateProfileEntity(userId);
 
         if (recruiter.getCompany() == null) {
             throw new BadRequestException("Recruiter must be associated with a registered company");
@@ -392,6 +422,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .resumeId(app.getResume() != null ? app.getResume().getId() : null)
                 .resumeFileName(app.getResume() != null ? app.getResume().getOriginalFileName() : null)
                 .appliedAt(app.getCreatedAt())
+                .shortlistedAt(app.getShortlistedAt())
                 .interviewScheduledAt(app.getInterviewScheduledAt())
                 .withdrawnAt(app.getWithdrawnAt())
                 .updatedAt(app.getUpdatedAt())

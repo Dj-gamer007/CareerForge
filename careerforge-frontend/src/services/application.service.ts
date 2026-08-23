@@ -100,8 +100,12 @@ export const applicationService = {
     return res.data.data;
   },
 
-  async updateApplicationNotes(id: number, notes: string): Promise<void> {
-    await apiClient.patch(`/recruiters/applications/${id}/notes`, { notes });
+  async updateApplicationNotes(id: number, notes: string): Promise<RecruiterApplicationDetailResponse> {
+    const res = await apiClient.patch<ApiResponse<RecruiterApplicationDetailResponse>>(
+      `/recruiters/applications/${id}/notes`,
+      { recruiterNotes: notes, notes }
+    );
+    return res.data.data;
   },
 
   async downloadCandidateResume(id: number): Promise<Blob> {

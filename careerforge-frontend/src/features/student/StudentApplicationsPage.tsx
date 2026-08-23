@@ -11,7 +11,7 @@ import { PaginationControls } from '@/components/table/PaginationControls';
 import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatDateTime } from '@/lib/utils';
 import { FileText, Building2, Calendar, Ban } from 'lucide-react';
 import { ApplicationStatus } from '@/types/application.types';
 
@@ -28,11 +28,15 @@ export function StudentApplicationsPage() {
         size: 10,
         status: statusFilter ? (statusFilter as ApplicationStatus) : undefined,
       }),
+    refetchInterval: 3000,
   });
 
   const withdrawMutation = useMutation({
     mutationFn: (id: number) => applicationService.withdrawApplication(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.student.applications() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student', 'applications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
   });
 
   if (isLoading) return <LoadingSpinner text="Loading your application tracker..." />;
@@ -104,7 +108,7 @@ export function StudentApplicationsPage() {
                         </span>
                         {app.interviewScheduledAt && (
                           <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold border border-amber-200">
-                            Interview Scheduled: {formatDate(app.interviewScheduledAt)}
+                            Interview Scheduled: {formatDateTime(app.interviewScheduledAt)}
                           </span>
                         )}
                       </div>
@@ -118,7 +122,10 @@ export function StudentApplicationsPage() {
                     </div>
 
                     {/* Self-Withdraw Action */}
-                    {(app.status === 'APPLIED' || app.status === 'UNDER_REVIEW') && (
+                    {(app.status === 'APPLIED' ||
+                      app.status === 'UNDER_REVIEW' ||
+                      app.status === 'SHORTLISTED' ||
+                      app.status === 'INTERVIEW_SCHEDULED') && (
                       <div className="shrink-0">
                         <Button
                           variant="outline"

@@ -4,22 +4,30 @@ import { recruiterService } from '@/services/recruiter.service';
 import { queryKeys } from '@/lib/queryClient';
 import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { PaginationControls } from '@/components/table/PaginationControls';
 import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
-import { Building2, MapPin, Users, CheckCircle2 } from 'lucide-react';
+import { Building2, MapPin, Users, CheckCircle2, Search } from 'lucide-react';
 
 export function CompanyDirectoryPage() {
   const [page, setPage] = useState(0);
-  const [searchName, setSearchName] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: queryKeys.publicCompanies.list({ page, name: searchName || undefined }),
-    queryFn: () => recruiterService.getCompanies({ page, size: 9, name: searchName || undefined }),
+    queryKey: queryKeys.publicCompanies.list({ page, search: submittedSearch || undefined }),
+    queryFn: () => recruiterService.getCompanies({ page, size: 9, search: submittedSearch || undefined }),
   });
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittedSearch(searchInput.trim());
+    setPage(0);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -27,16 +35,20 @@ export function CompanyDirectoryPage() {
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Verified Hiring Companies</h1>
         <p className="text-sm text-slate-500 mt-1">Discover vetted employers actively hiring on CareerForge</p>
 
-        <div className="mt-6 max-w-md">
-          <Input
-            placeholder="Search companies by name..."
-            value={searchName}
-            onChange={(e) => {
-              setSearchName(e.target.value);
-              setPage(0);
-            }}
-          />
-        </div>
+        <form onSubmit={handleSearchSubmit} className="mt-6 max-w-lg flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Input
+              placeholder="Search companies by name..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <Button type="submit" size="md">
+            <Search className="w-4 h-4 mr-1.5" />
+            Search
+          </Button>
+        </form>
       </div>
 
       {isLoading ? (
@@ -51,7 +63,21 @@ export function CompanyDirectoryPage() {
         <EmptyState
           icon={<Building2 className="w-8 h-8 text-slate-400" />}
           title="No companies found"
-          description="Try modifying your search filter."
+          description={
+            submittedSearch
+              ? `No company named "${submittedSearch}" found.`
+              : 'Try modifying your search filter.'
+          }
+          actionText={submittedSearch ? 'Clear Search' : undefined}
+          onAction={
+            submittedSearch
+              ? () => {
+                  setSearchInput('');
+                  setSubmittedSearch('');
+                  setPage(0);
+                }
+              : undefined
+          }
         />
       ) : (
         <div className="space-y-6">

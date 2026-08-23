@@ -29,6 +29,12 @@ export function Navbar() {
     return '/';
   };
 
+  const getProfileLink = () => {
+    if (user?.role === 'ROLE_RECRUITER') return '/recruiter/profile';
+    if (user?.role === 'ROLE_STUDENT') return '/student/profile';
+    return '#';
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -43,12 +49,16 @@ export function Navbar() {
 
           {/* Navigation links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <Link to="/jobs" className="hover:text-indigo-600 transition-colors">
-              Find Jobs
-            </Link>
-            <Link to="/companies" className="hover:text-indigo-600 transition-colors">
-              Companies
-            </Link>
+            {user?.role !== 'ROLE_RECRUITER' && (
+              <>
+                <Link to="/jobs" className="hover:text-indigo-600 transition-colors">
+                  Find Jobs
+                </Link>
+                <Link to="/companies" className="hover:text-indigo-600 transition-colors">
+                  Companies
+                </Link>
+              </>
+            )}
             {isAuthenticated && (
               <Link to={getDashboardLink()} className="hover:text-indigo-600 transition-colors">
                 Dashboard
@@ -62,7 +72,11 @@ export function Navbar() {
           {isAuthenticated ? (
             <>
               <NotificationBell />
-              <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200">
+              <Link
+                to={getProfileLink()}
+                className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 hover:opacity-80 transition-opacity"
+                title="View Profile"
+              >
                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold border border-slate-200">
                   <User className="w-4 h-4" />
                 </div>
@@ -70,7 +84,7 @@ export function Navbar() {
                   <p className="font-semibold text-slate-900 truncate max-w-[130px]">{user?.email}</p>
                   <p className="text-slate-400 capitalize">{user?.role?.replace('ROLE_', '').toLowerCase()}</p>
                 </div>
-              </div>
+              </Link>
               <Button variant="ghost" size="sm" onClick={handleLogout} title="Sign Out">
                 <LogOut className="w-4 h-4 text-slate-600" />
               </Button>

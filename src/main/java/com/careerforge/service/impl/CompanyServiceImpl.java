@@ -85,9 +85,9 @@ public class CompanyServiceImpl implements CompanyService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public CompanyResponse getMyCompany(Long userId) {
-        RecruiterProfile recruiter = recruiterService.getProfileEntityByUserId(userId);
+        RecruiterProfile recruiter = recruiterService.getOrCreateProfileEntity(userId);
         if (recruiter.getCompany() == null) {
             throw new ResourceNotFoundException("Company", "recruiterUserId", userId);
         }
@@ -97,7 +97,7 @@ public class CompanyServiceImpl implements CompanyService {
     @Override
     @Transactional
     public CompanyResponse updateMyCompany(Long userId, CompanyUpdateRequest request) {
-        RecruiterProfile recruiter = recruiterService.getProfileEntityByUserId(userId);
+        RecruiterProfile recruiter = recruiterService.getOrCreateProfileEntity(userId);
         Company company = recruiter.getCompany();
 
         if (company == null) {

@@ -38,11 +38,15 @@ class ApplicationServiceTest {
     @Mock
     private StudentProfileRepository studentProfileRepository;
     @Mock
+    private StudentProfileService studentProfileService;
+    @Mock
     private JobRepository jobRepository;
     @Mock
     private ResumeRepository resumeRepository;
     @Mock
     private RecruiterProfileRepository recruiterProfileRepository;
+    @Mock
+    private RecruiterService recruiterService;
     @Mock
     private SkillMatchingService skillMatchingService;
     @Mock
@@ -119,9 +123,9 @@ class ApplicationServiceTest {
                 .coverLetter("Excited about this role.")
                 .build();
 
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
-        when(applicationRepository.existsByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(false);
+        when(applicationRepository.findByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(Optional.empty());
         when(resumeRepository.findByStudentProfileAndIsActiveTrue(studentProfile)).thenReturn(Optional.of(activeResume));
 
         SkillMatchResponse matchResponse = SkillMatchResponse.builder()
@@ -145,10 +149,48 @@ class ApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("Should permit re-applying when previously withdrawn")
+    void testSubmitApplication_ReapplyAfterWithdrawal_Success() {
+        Application withdrawnApp = Application.builder()
+                .id(500L)
+                .studentProfile(studentProfile)
+                .job(publishedJob)
+                .resume(activeResume)
+                .status(ApplicationStatus.WITHDRAWN)
+                .withdrawnAt(LocalDateTime.now().minusDays(2))
+                .matchScoreAtApplication(BigDecimal.valueOf(50.0))
+                .build();
+
+        ApplicationSubmitRequest request = ApplicationSubmitRequest.builder()
+                .jobId(100L)
+                .coverLetter("Re-applying with fresh skills.")
+                .build();
+
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
+        when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
+        when(applicationRepository.findByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(Optional.of(withdrawnApp));
+        when(resumeRepository.findByStudentProfileAndIsActiveTrue(studentProfile)).thenReturn(Optional.of(activeResume));
+
+        SkillMatchResponse matchResponse = SkillMatchResponse.builder()
+                .overallScore(BigDecimal.valueOf(92.00))
+                .build();
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(matchResponse);
+
+        when(applicationRepository.save(any(Application.class))).thenAnswer(i -> i.getArgument(0));
+
+        StudentApplicationResponse response = applicationService.submitApplication(1L, request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(500L);
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
+        assertThat(response.getMatchScoreAtApplication()).isEqualByComparingTo("92.00");
+    }
+
+    @Test
     @DisplayName("Should reject submission when profile completion < 30%")
     void testSubmitApplication_LowProfileCompletion() {
         studentProfile.setProfileCompletionPercentage(20);
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
 
         ApplicationSubmitRequest request = ApplicationSubmitRequest.builder().jobId(100L).build();
 
@@ -161,7 +203,7 @@ class ApplicationServiceTest {
     @DisplayName("Should reject submission when job is unpublished (DRAFT)")
     void testSubmitApplication_UnpublishedJob() {
         publishedJob.setStatus(JobStatus.DRAFT);
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
 
         ApplicationSubmitRequest request = ApplicationSubmitRequest.builder().jobId(100L).build();
@@ -175,7 +217,7 @@ class ApplicationServiceTest {
     @DisplayName("Should reject submission when job deadline has passed")
     void testSubmitApplication_ExpiredDeadline() {
         publishedJob.setDeadline(LocalDateTime.now().minusDays(1));
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
 
         ApplicationSubmitRequest request = ApplicationSubmitRequest.builder().jobId(100L).build();
@@ -186,25 +228,32 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject duplicate application submission")
+    @DisplayName("Should reject duplicate active application submission")
     void testSubmitApplication_Duplicate() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        Application activeApp = Application.builder()
+                .id(500L)
+                .studentProfile(studentProfile)
+                .job(publishedJob)
+                .status(ApplicationStatus.APPLIED)
+                .build();
+
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
-        when(applicationRepository.existsByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(true);
+        when(applicationRepository.findByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(Optional.of(activeApp));
 
         ApplicationSubmitRequest request = ApplicationSubmitRequest.builder().jobId(100L).build();
 
         assertThatThrownBy(() -> applicationService.submitApplication(1L, request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("already submitted an application");
+                .hasMessageContaining("already submitted an active application");
     }
 
     @Test
     @DisplayName("Should reject submission when student has no active resume and none specified")
     void testSubmitApplication_NoActiveResume() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
-        when(applicationRepository.existsByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(false);
+        when(applicationRepository.findByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(Optional.empty());
         when(resumeRepository.findByStudentProfileAndIsActiveTrue(studentProfile)).thenReturn(Optional.empty());
 
         ApplicationSubmitRequest request = ApplicationSubmitRequest.builder().jobId(100L).build();
@@ -217,7 +266,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("Should allow candidate to withdraw application from APPLIED state")
     void testWithdrawApplication_FromApplied() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(applicationRepository.findByIdAndStudentProfile_Id(500L, 10L)).thenReturn(Optional.of(application));
         when(applicationRepository.save(any(Application.class))).thenReturn(application);
 
@@ -232,7 +281,7 @@ class ApplicationServiceTest {
     @DisplayName("Should reject withdrawing application from terminal REJECTED state")
     void testWithdrawApplication_TerminalState() {
         application.setStatus(ApplicationStatus.REJECTED);
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(applicationRepository.findByIdAndStudentProfile_Id(500L, 10L)).thenReturn(Optional.of(application));
 
         assertThatThrownBy(() -> applicationService.withdrawApplication(1L, 500L))
@@ -243,7 +292,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("Recruiter transitions APPLIED -> UNDER_REVIEW and sets reviewedAt")
     void testRecruiterTransition_ToUnderReview() {
-        when(recruiterProfileRepository.findByUser_Id(2L)).thenReturn(Optional.of(recruiterProfile));
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
         when(applicationRepository.save(any(Application.class))).thenReturn(application);
         when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
@@ -264,7 +313,7 @@ class ApplicationServiceTest {
         application.setStatus(ApplicationStatus.SHORTLISTED);
         LocalDateTime interviewTime = LocalDateTime.now().plusDays(5);
 
-        when(recruiterProfileRepository.findByUser_Id(2L)).thenReturn(Optional.of(recruiterProfile));
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
         when(applicationRepository.save(any(Application.class))).thenReturn(application);
         when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
@@ -285,7 +334,7 @@ class ApplicationServiceTest {
     @DisplayName("Recruiter scheduling interview with past timestamp throws BadRequestException")
     void testRecruiterTransition_InterviewPastTimestamp() {
         application.setStatus(ApplicationStatus.SHORTLISTED);
-        when(recruiterProfileRepository.findByUser_Id(2L)).thenReturn(Optional.of(recruiterProfile));
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
 
         ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
@@ -301,7 +350,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("Recruiter invalid state transition (APPLIED -> ACCEPTED) throws BadRequestException")
     void testRecruiterInvalidTransition_ThrowsBadRequest() {
-        when(recruiterProfileRepository.findByUser_Id(2L)).thenReturn(Optional.of(recruiterProfile));
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
 
         ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
@@ -316,7 +365,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("Cross-company recruiter access to application throws ResourceNotFoundException (404)")
     void testCrossCompanyAccess_ThrowsNotFound() {
-        when(recruiterProfileRepository.findByUser_Id(2L)).thenReturn(Optional.of(recruiterProfile));
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> applicationService.getApplicationDetailForRecruiter(2L, 500L))
@@ -326,7 +375,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("Cross-student access to application throws ResourceNotFoundException (404)")
     void testCrossStudentAccess_ThrowsNotFound() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(applicationRepository.findByIdAndStudentProfile_Id(500L, 10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> applicationService.getMyApplicationDetail(1L, 500L))

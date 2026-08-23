@@ -31,9 +31,17 @@ public class JobSpecification {
                 predicates.add(cb.or(titleMatch, descMatch, companyMatch));
             }
 
-            // 3. Location filter
+            // 3. Location / Remote filter
             if (StringUtils.hasText(criteria.getLocation())) {
-                predicates.add(cb.like(cb.lower(root.get("location")), "%" + criteria.getLocation().toLowerCase().trim() + "%"));
+                String loc = criteria.getLocation().toLowerCase().trim();
+                if ("remote".equalsIgnoreCase(loc)) {
+                    predicates.add(cb.or(
+                            cb.equal(root.get("workMode"), com.careerforge.entity.enums.WorkMode.REMOTE),
+                            cb.like(cb.lower(root.get("location")), "%remote%")
+                    ));
+                } else {
+                    predicates.add(cb.like(cb.lower(root.get("location")), "%" + loc + "%"));
+                }
             }
 
             // 4. Work modes filter

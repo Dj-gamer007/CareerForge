@@ -19,21 +19,20 @@ export function NotificationListPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.notifications.list(page),
     queryFn: () => notificationService.getNotifications({ page, size: 15 }),
+    refetchInterval: 2500,
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: (id: number) => notificationService.markAsRead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 
   const markAllMutation = useMutation({
     mutationFn: () => notificationService.markAllAsRead(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 

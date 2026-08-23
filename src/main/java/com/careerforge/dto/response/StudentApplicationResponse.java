@@ -34,6 +34,7 @@ public class StudentApplicationResponse {
     private Long resumeId;
     private String resumeFileName;
     private LocalDateTime appliedAt;
+    private LocalDateTime shortlistedAt;
     private LocalDateTime interviewScheduledAt;
     private LocalDateTime withdrawnAt;
     private LocalDateTime updatedAt;

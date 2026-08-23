@@ -7,6 +7,8 @@ import com.careerforge.entity.StudentProfile;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.exception.FileStorageException;
 import com.careerforge.exception.ResourceNotFoundException;
+import com.careerforge.entity.Application;
+import com.careerforge.repository.ApplicationRepository;
 import com.careerforge.repository.ResumeRepository;
 import com.careerforge.service.ResumeService;
 import com.careerforge.service.StorageService;
@@ -30,6 +32,7 @@ public class ResumeServiceImpl implements ResumeService {
 
     private final ResumeRepository resumeRepository;
     private final StudentProfileService studentProfileService;
+    private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
     private final StorageConfigProperties storageConfigProperties;
 
@@ -128,27 +131,52 @@ public class ResumeServiceImpl implements ResumeService {
     @Override
     @Transactional
     public void deleteResume(Long userId, Long resumeId) {
-        StudentProfile profile = studentProfileService.getProfileEntityByUserId(userId);
+        StudentProfile profile = studentProfileService.getOrCreateProfileEntity(userId);
 
         Resume resume = resumeRepository.findByIdAndStudentProfile(resumeId, profile)
                 .orElseThrow(() -> new ResourceNotFoundException("Resume", "id", resumeId));
 
-        // Delete from storage
-        storageService.delete(resume.getStoredFileName());
+        boolean wasActive = resume.isActive();
 
-        // Delete metadata
+        // 1. Resolve any student applications referencing this resume to avoid FK constraint violations
+        List<Application> linkedApplications = applicationRepository.findAllByResume(resume);
+        if (!linkedApplications.isEmpty()) {
+            List<Resume> remaining = resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(profile)
+                    .stream()
+                    .filter(r -> !r.getId().equals(resumeId))
+                    .toList();
+            if (!remaining.isEmpty()) {
+                Resume fallbackResume = remaining.get(0);
+                for (Application app : linkedApplications) {
+                    app.setResume(fallbackResume);
+                }
+                applicationRepository.saveAll(linkedApplications);
+                applicationRepository.flush();
+            } else {
+                applicationRepository.deleteAll(linkedApplications);
+                applicationRepository.flush();
+            }
+        }
+
+        // 2. Delete resume metadata
         resumeRepository.delete(resume);
+        resumeRepository.flush();
 
-        // If the deleted resume was active, activate the latest available resume if any exists
-        if (resume.isActive()) {
+        // 3. If the deleted resume was active, activate the latest available remaining resume if any exists
+        if (wasActive) {
             List<Resume> remaining = resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(profile);
             if (!remaining.isEmpty()) {
                 Resume latest = remaining.get(0);
                 latest.setActive(true);
                 resumeRepository.save(latest);
+                resumeRepository.flush();
             }
         }
 
+        // 4. Delete physical file from storage
+        storageService.delete(resume.getStoredFileName());
+
+        // 5. Recalculate and persist updated profile completion
         studentProfileService.updateProfileCompletion(profile);
         log.info("Deleted resume ID: {} for user ID: {}", resumeId, userId);
     }

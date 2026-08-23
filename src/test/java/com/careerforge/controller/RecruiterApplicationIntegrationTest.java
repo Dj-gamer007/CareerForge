@@ -237,7 +237,7 @@ class RecruiterApplicationIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("SHORTLISTED"));
 
         // 6. Transition SHORTLISTED -> INTERVIEW_SCHEDULED (future timestamp)
-        LocalDateTime futureInterview = LocalDateTime.now().plusDays(3);
+        LocalDateTime futureInterview = LocalDateTime.of(2026, 8, 25, 14, 30);
         mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/status")
                         .header("Authorization", recruiterTokenA)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -247,6 +247,13 @@ class RecruiterApplicationIntegrationTest {
                                 .build())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("INTERVIEW_SCHEDULED"));
+
+        // Verify candidate received interview invitation notification with human-readable time format
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header("Authorization", studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].title", containsString("Interview Invitation")))
+                .andExpect(jsonPath("$.data.content[0].message", containsString("Aug 25, 2026 at 2:30 PM")));
 
         // 7. Update recruiter notes
         mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/notes")
@@ -298,6 +305,31 @@ class RecruiterApplicationIntegrationTest {
         mockMvc.perform(get("/api/v1/recruiters/applications/" + applicationId + "/resume/download")
                         .header("Authorization", recruiterTokenB))
                 .andExpect(status().isNotFound());
+
+        // Recruiter B attempts to update notes -> 404
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/notes")
+                        .header("Authorization", recruiterTokenB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\":\"Unauthorized private notes\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Recruiter can save internal notes using 'notes' payload alias and notes persist")
+    void testSaveInternalNotes_WithNotesAlias_Success() throws Exception {
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/notes")
+                        .header("Authorization", recruiterTokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\":\"Not capable\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.recruiterNotes").value("Not capable"));
+
+        // Fetch application detail again and verify persistence
+        mockMvc.perform(get("/api/v1/recruiters/applications/" + applicationId)
+                        .header("Authorization", recruiterTokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.recruiterNotes").value("Not capable"));
     }
 
     @Test

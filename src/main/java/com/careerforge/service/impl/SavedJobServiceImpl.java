@@ -15,6 +15,7 @@ import com.careerforge.repository.JobSkillRepository;
 import com.careerforge.repository.SavedJobRepository;
 import com.careerforge.repository.StudentProfileRepository;
 import com.careerforge.service.SavedJobService;
+import com.careerforge.service.StudentProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -34,6 +35,7 @@ public class SavedJobServiceImpl implements SavedJobService {
 
     private final SavedJobRepository savedJobRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final StudentProfileService studentProfileService;
     private final JobRepository jobRepository;
     private final JobSkillRepository jobSkillRepository;
 
@@ -110,8 +112,7 @@ public class SavedJobServiceImpl implements SavedJobService {
     }
 
     private StudentProfile getStudentProfileByUserId(Long userId) {
-        return studentProfileRepository.findByUser_Id(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("StudentProfile", "userId", userId));
+        return studentProfileService.getOrCreateProfileEntity(userId);
     }
 
     private SavedJobResponse mapToResponse(SavedJob savedJob, List<JobSkill> skills) {

@@ -68,8 +68,14 @@ export const recruiterService = {
   },
 
   // Public Companies
-  async getCompanies(params?: { name?: string; page?: number; size?: number }): Promise<SpringPage<CompanySummaryResponse>> {
-    const res = await apiClient.get<ApiResponse<SpringPage<CompanySummaryResponse>>>('/companies', { params });
+  async getCompanies(params?: { search?: string; name?: string; page?: number; size?: number }): Promise<SpringPage<CompanySummaryResponse>> {
+    const searchParam = params?.search || params?.name;
+    const queryParams = {
+      ...params,
+      search: searchParam || undefined,
+      name: searchParam || undefined,
+    };
+    const res = await apiClient.get<ApiResponse<SpringPage<CompanySummaryResponse>>>('/companies', { params: queryParams });
     return res.data.data;
   },
 

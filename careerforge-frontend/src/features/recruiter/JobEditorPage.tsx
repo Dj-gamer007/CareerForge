@@ -32,7 +32,7 @@ export function JobEditorPage() {
     salaryMax: undefined,
     currency: 'INR',
     deadline: '',
-    skills: [{ skillId: 1, required: true, minimumProficiency: 'INTERMEDIATE' }],
+    skills: [],
   });
 
   const { data: existingJob, isLoading } = useQuery({
@@ -56,9 +56,9 @@ export function JobEditorPage() {
         deadline: existingJob.deadline ? existingJob.deadline.split('T')[0] : '',
         skills: existingJob.skills?.map((s) => ({
           skillId: s.skillId,
-          required: s.isRequired,
+          required: s.isRequired ?? s.required ?? true,
           minimumProficiency: s.minimumProficiency,
-        })) || [{ skillId: 1, required: true, minimumProficiency: 'INTERMEDIATE' }],
+        })) || [],
       });
     }
   }, [existingJob]);
@@ -76,17 +76,26 @@ export function JobEditorPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.jobs() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicJobs.list() });
       navigate('/recruiter/jobs');
     },
     onError: (err: any) => {
-      setErrorMsg(err.response?.data?.message || 'Failed to save job posting.');
+      const fieldErrors = err.response?.data?.fieldErrors;
+      if (fieldErrors && typeof fieldErrors === 'object' && Object.keys(fieldErrors).length > 0) {
+        const errorDetails = Object.entries(fieldErrors)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(', ');
+        setErrorMsg(errorDetails || err.response?.data?.message || 'Failed to save job posting.');
+      } else {
+        setErrorMsg(err.response?.data?.message || 'Failed to save job posting.');
+      }
     },
   });
 
   const handleAddSkill = () => {
     setForm({
       ...form,
-      skills: [...form.skills, { skillId: 1, required: true, minimumProficiency: 'INTERMEDIATE' }],
+      skills: [...form.skills, { skillId: 0, required: true, minimumProficiency: 'INTERMEDIATE' }],
     });
   };
 
@@ -106,15 +115,21 @@ export function JobEditorPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    if (!form.title || !form.description) {
+    if (!form.title || !form.title.trim() || !form.description || !form.description.trim()) {
       setErrorMsg('Please provide a title and job description.');
       return;
     }
-    if (form.skills.length === 0) {
-      setErrorMsg('Please specify at least one skill requirement.');
-      return;
-    }
-    saveMutation.mutate(form);
+    // Filter out unselected skills where skillId <= 0 or not chosen
+    const validSkills = form.skills.filter((s) => s.skillId && Number(s.skillId) > 0);
+
+    const payload: CreateJobPayload = {
+      ...form,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      location: form.location?.trim() || (form.workMode === 'REMOTE' ? 'Remote' : 'Not Specified'),
+      skills: validSkills,
+    };
+    saveMutation.mutate(payload);
   };
 
   if (isEditing && isLoading) return <LoadingSpinner text="Loading job details..." />;
@@ -241,63 +256,70 @@ export function JobEditorPage() {
               </Button>
             </div>
 
-            <div className="space-y-3">
-              {form.skills.map((skill, index) => (
-                <div key={index} className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-3">
-                  <div className="flex-1">
-                    <Select
-                      value={skill.skillId}
-                      onChange={(e) => handleSkillChange(index, 'skillId', Number(e.target.value))}
-                      options={[
-                        { label: 'Java', value: 1 },
-                        { label: 'Spring Boot', value: 2 },
-                        { label: 'MySQL', value: 3 },
-                        { label: 'Git', value: 4 },
-                        { label: 'Docker', value: 5 },
-                        { label: 'REST API', value: 6 },
-                        { label: 'React', value: 7 },
-                        { label: 'TypeScript', value: 8 },
-                        { label: 'Python', value: 9 },
-                        { label: 'Microservices', value: 10 },
-                      ]}
-                    />
-                  </div>
+            {form.skills.length === 0 ? (
+              <div className="p-6 text-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400">
+                No skills added yet. Click &quot;Add Skill&quot; above to configure role requirements.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {form.skills.map((skill, index) => (
+                  <div key={index} className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-3">
+                    <div className="flex-1">
+                      <Select
+                        value={skill.skillId || 0}
+                        onChange={(e) => handleSkillChange(index, 'skillId', Number(e.target.value))}
+                        options={[
+                          { label: 'Select Skill...', value: 0 },
+                          { label: 'Java', value: 1 },
+                          { label: 'Spring Boot', value: 2 },
+                          { label: 'MySQL', value: 3 },
+                          { label: 'Git', value: 4 },
+                          { label: 'Docker', value: 5 },
+                          { label: 'REST API', value: 6 },
+                          { label: 'React', value: 7 },
+                          { label: 'TypeScript', value: 8 },
+                          { label: 'Python', value: 9 },
+                          { label: 'Microservices', value: 10 },
+                        ]}
+                      />
+                    </div>
 
-                  <div className="w-44">
-                    <Select
-                      value={skill.minimumProficiency}
-                      onChange={(e) => handleSkillChange(index, 'minimumProficiency', e.target.value)}
-                      options={[
-                        { label: 'Beginner', value: 'BEGINNER' },
-                        { label: 'Intermediate', value: 'INTERMEDIATE' },
-                        { label: 'Advanced', value: 'ADVANCED' },
-                        { label: 'Expert', value: 'EXPERT' },
-                      ]}
-                    />
-                  </div>
+                    <div className="w-44">
+                      <Select
+                        value={skill.minimumProficiency}
+                        onChange={(e) => handleSkillChange(index, 'minimumProficiency', e.target.value)}
+                        options={[
+                          { label: 'Beginner', value: 'BEGINNER' },
+                          { label: 'Intermediate', value: 'INTERMEDIATE' },
+                          { label: 'Advanced', value: 'ADVANCED' },
+                          { label: 'Expert', value: 'EXPERT' },
+                        ]}
+                      />
+                    </div>
 
-                  <div className="w-32">
-                    <Select
-                      value={skill.required ? 'true' : 'false'}
-                      onChange={(e) => handleSkillChange(index, 'required', e.target.value === 'true')}
-                      options={[
-                        { label: 'Required (2x)', value: 'true' },
-                        { label: 'Optional (1x)', value: 'false' },
-                      ]}
-                    />
-                  </div>
+                    <div className="w-32">
+                      <Select
+                        value={skill.required ? 'true' : 'false'}
+                        onChange={(e) => handleSkillChange(index, 'required', e.target.value === 'true')}
+                        options={[
+                          { label: 'Required (2x)', value: 'true' },
+                          { label: 'Optional (1x)', value: 'false' },
+                        ]}
+                      />
+                    </div>
 
-                  <button
-                    type="button"
-                    className="text-slate-400 hover:text-rose-600 p-2"
-                    onClick={() => handleRemoveSkill(index)}
-                    disabled={form.skills.length <= 1}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-rose-600 p-2"
+                      onClick={() => handleRemoveSkill(index)}
+                      title="Remove skill"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

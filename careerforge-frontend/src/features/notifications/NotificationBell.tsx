@@ -10,32 +10,31 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  // Poll unread count every 30s as per Phase 6 specification
+  // Poll unread count regularly for real-time notification badge updates
   const { data: unreadCount = 0 } = useQuery({
     queryKey: queryKeys.notifications.unreadCount,
     queryFn: () => notificationService.getUnreadCount(),
-    refetchInterval: 30000,
+    refetchInterval: 2500,
   });
 
   const { data: notificationsData } = useQuery({
     queryKey: queryKeys.notifications.list(0),
     queryFn: () => notificationService.getNotifications({ page: 0, size: 5 }),
     enabled: isOpen,
+    refetchInterval: isOpen ? 2500 : false,
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: (id: number) => notificationService.markAsRead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list() });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 
   const markAllMutation = useMutation({
     mutationFn: () => notificationService.markAllAsRead(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list() });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 

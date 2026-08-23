@@ -256,4 +256,39 @@ class StudentProfileServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getName()).isEqualTo("AWS Certified Developer");
     }
+
+    @Test
+    @DisplayName("Should return existing profile unchanged when calling getOrCreateProfileEntity")
+    void testGetOrCreateProfileEntity_ExistingProfile_ReturnsUnchanged() {
+        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(testProfile));
+
+        StudentProfile result = studentProfileService.getOrCreateProfileEntity(1L);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(10L);
+        assertThat(result.getFirstName()).isEqualTo("John");
+        assertThat(result.getLastName()).isEqualTo("Doe");
+        verify(studentProfileRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should create and return new default profile when user has no existing profile")
+    void testGetOrCreateProfileEntity_MissingProfile_CreatesDefaultProfile() {
+        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.empty());
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(studentProfileRepository.save(any(StudentProfile.class))).thenAnswer(invocation -> {
+            StudentProfile p = invocation.getArgument(0);
+            p.setId(99L);
+            return p;
+        });
+
+        StudentProfile result = studentProfileService.getOrCreateProfileEntity(1L);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(99L);
+        assertThat(result.getFirstName()).isEqualTo("Student");
+        assertThat(result.getLastName()).isEqualTo("User");
+        assertThat(result.getUser()).isEqualTo(testUser);
+        verify(studentProfileRepository, times(1)).save(any(StudentProfile.class));
+    }
 }

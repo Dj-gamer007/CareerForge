@@ -45,6 +45,8 @@ class SavedJobServiceTest {
     @Mock
     private StudentProfileRepository studentProfileRepository;
     @Mock
+    private StudentProfileService studentProfileService;
+    @Mock
     private JobRepository jobRepository;
     @Mock
     private JobSkillRepository jobSkillRepository;
@@ -105,7 +107,7 @@ class SavedJobServiceTest {
     @Test
     @DisplayName("Should bookmark published job successfully")
     void testSaveJob_Success() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
         when(savedJobRepository.existsByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(false);
         when(savedJobRepository.save(any(SavedJob.class))).thenAnswer(i -> {
@@ -126,7 +128,7 @@ class SavedJobServiceTest {
     @Test
     @DisplayName("Should reject bookmarking unpublished draft job")
     void testSaveJob_UnpublishedJob() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(101L)).thenReturn(Optional.of(draftJob));
 
         assertThatThrownBy(() -> savedJobService.saveJob(1L, 101L))
@@ -137,7 +139,7 @@ class SavedJobServiceTest {
     @Test
     @DisplayName("Should reject duplicate bookmarking of the same job")
     void testSaveJob_Duplicate() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(publishedJob));
         when(savedJobRepository.existsByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(true);
 
@@ -149,7 +151,7 @@ class SavedJobServiceTest {
     @Test
     @DisplayName("Should remove saved job from bookmarks")
     void testRemoveSavedJob_Success() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(savedJobRepository.findByStudentProfile_IdAndJob_Id(10L, 100L)).thenReturn(Optional.of(savedJob));
 
         savedJobService.removeSavedJob(1L, 100L);
@@ -160,7 +162,7 @@ class SavedJobServiceTest {
     @Test
     @DisplayName("Should throw ResourceNotFoundException when removing unsaved job")
     void testRemoveSavedJob_NotFound() {
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(savedJobRepository.findByStudentProfile_IdAndJob_Id(10L, 999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> savedJobService.removeSavedJob(1L, 999L))
@@ -173,7 +175,7 @@ class SavedJobServiceTest {
         Pageable pageable = PageRequest.of(0, 10);
         Page<SavedJob> page = new PageImpl<>(List.of(savedJob), pageable, 1);
 
-        when(studentProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(studentProfile));
+        when(studentProfileService.getOrCreateProfileEntity(1L)).thenReturn(studentProfile);
         when(savedJobRepository.findAllByStudentProfile_Id(10L, pageable)).thenReturn(page);
         when(jobSkillRepository.findAllByJob_IdInWithSkill(List.of(100L))).thenReturn(Collections.emptyList());
 

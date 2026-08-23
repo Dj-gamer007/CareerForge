@@ -23,9 +23,9 @@ public class RecruiterServiceImpl implements RecruiterService {
     private final UserRepository userRepository;
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public RecruiterProfileResponse getProfileByUserId(Long userId) {
-        RecruiterProfile profile = getProfileEntityByUserId(userId);
+        RecruiterProfile profile = getOrCreateProfileEntity(userId);
         return mapToResponse(profile);
     }
 

@@ -64,4 +64,20 @@ public class ApplicationSpecification {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
+
+    public static Specification<Application> buildStudentSpecification(Long studentProfileId, ApplicationStatus status) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            // 1. Mandatory student profile scoping
+            predicates.add(cb.equal(root.get("studentProfile").get("id"), studentProfileId));
+
+            // 2. Status is the single source of truth
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
 }

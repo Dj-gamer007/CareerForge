@@ -31,6 +31,8 @@ import {
   FolderKanban,
   Award,
   ExternalLink,
+  FileText,
+  X,
 } from 'lucide-react';
 
 import { ProficiencyLevel } from '@/types/student.types';
@@ -444,6 +446,16 @@ export function StudentProfilePage() {
   });
 
   // =========================================================
+  // RESUME MUTATION STATE & FEEDBACK
+  // =========================================================
+
+  const [deletingResumeId, setDeletingResumeId] = useState<number | null>(null);
+  const [resumeActionFeedback, setResumeActionFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // =========================================================
   // RESUME UPLOAD MUTATION
   // =========================================================
 
@@ -451,13 +463,29 @@ export function StudentProfilePage() {
     mutationFn: (file: File) =>
       studentService.uploadResume(file),
 
+    onMutate: () => {
+      setResumeActionFeedback(null);
+    },
+
     onSuccess: () => {
+      setResumeActionFeedback({
+        type: 'success',
+        message: 'Resume uploaded successfully.',
+      });
+
       queryClient.invalidateQueries({
         queryKey: ['student', 'resumes'],
       });
 
       queryClient.invalidateQueries({
         queryKey: queryKeys.student.profile,
+      });
+    },
+
+    onError: (err: any) => {
+      setResumeActionFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Failed to upload resume.',
       });
     },
   });
@@ -470,13 +498,29 @@ export function StudentProfilePage() {
     mutationFn: (id: number) =>
       studentService.setActiveResume(id),
 
+    onMutate: () => {
+      setResumeActionFeedback(null);
+    },
+
     onSuccess: () => {
+      setResumeActionFeedback({
+        type: 'success',
+        message: 'Active resume updated successfully.',
+      });
+
       queryClient.invalidateQueries({
         queryKey: ['student', 'resumes'],
       });
 
       queryClient.invalidateQueries({
         queryKey: queryKeys.student.profile,
+      });
+    },
+
+    onError: (err: any) => {
+      setResumeActionFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Failed to update active resume.',
       });
     },
   });
@@ -489,7 +533,17 @@ export function StudentProfilePage() {
     mutationFn: (id: number) =>
       studentService.deleteResume(id),
 
+    onMutate: (id: number) => {
+      setDeletingResumeId(id);
+      setResumeActionFeedback(null);
+    },
+
     onSuccess: () => {
+      setResumeActionFeedback({
+        type: 'success',
+        message: 'Resume removed successfully.',
+      });
+
       queryClient.invalidateQueries({
         queryKey: ['student', 'resumes'],
       });
@@ -497,6 +551,17 @@ export function StudentProfilePage() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.student.profile,
       });
+    },
+
+    onError: (err: any) => {
+      setResumeActionFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Failed to delete resume.',
+      });
+    },
+
+    onSettled: () => {
+      setDeletingResumeId(null);
     },
   });
 
@@ -1469,7 +1534,26 @@ export function StudentProfilePage() {
 
         </CardHeader>
 
-        <CardContent className="p-6 space-y-3">
+        <CardContent className="p-6 space-y-4">
+
+          {resumeActionFeedback && (
+            <div
+              className={`p-3 rounded-lg text-xs flex items-center justify-between transition-all ${
+                resumeActionFeedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}
+            >
+              <span>{resumeActionFeedback.message}</span>
+              <button
+                type="button"
+                onClick={() => setResumeActionFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {isResumesLoading ? (
 
@@ -1477,10 +1561,15 @@ export function StudentProfilePage() {
 
           ) : resumes.length === 0 ? (
 
-            <p className="text-xs text-slate-400">
-              No resumes uploaded yet. Upload a PDF resume
-              (max 5MB).
-            </p>
+            <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-xl">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-slate-700">
+                No resumes uploaded yet
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Upload a PDF resume (max 5MB) to apply for opportunities and complete your profile.
+              </p>
+            </div>
 
           ) : (
 
@@ -1535,6 +1624,10 @@ export function StudentProfilePage() {
                       isLoading={
                         setActiveResumeMutation.isPending
                       }
+                      disabled={
+                        setActiveResumeMutation.isPending ||
+                        deleteResumeMutation.isPending
+                      }
                     >
                       Set Active
                     </Button>
@@ -1551,7 +1644,11 @@ export function StudentProfilePage() {
                       )
                     }
                     isLoading={
-                      deleteResumeMutation.isPending
+                      deletingResumeId === r.id
+                    }
+                    disabled={
+                      deleteResumeMutation.isPending ||
+                      setActiveResumeMutation.isPending
                     }
                   >
                     <Trash2 className="w-4 h-4" />

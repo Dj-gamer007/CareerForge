@@ -36,13 +36,19 @@ class AuthServiceTest {
     @Mock
     private RefreshTokenService refreshTokenService;
 
+    @Mock
+    private StudentProfileService studentProfileService;
+
+    @Mock
+    private RecruiterService recruiterService;
+
     @InjectMocks
     private AuthServiceImpl authService;
 
     @Test
-    void testRegisterUserSuccessfully() {
+    void testRegisterStudentSuccessfully_AutoProvisionsProfile() {
         RegisterRequest request = RegisterRequest.builder()
-                .email("newuser@careerforge.local")
+                .email("student@careerforge.local")
                 .password("Password123!")
                 .role(Role.ROLE_STUDENT)
                 .build();
@@ -52,7 +58,7 @@ class AuthServiceTest {
 
         User savedUser = User.builder()
                 .id(10L)
-                .email("newuser@careerforge.local")
+                .email("student@careerforge.local")
                 .passwordHash("encoded_pass")
                 .role(Role.ROLE_STUDENT)
                 .enabled(true)
@@ -69,8 +75,46 @@ class AuthServiceTest {
         assertNotNull(response);
         assertEquals("mock_access_token", response.getAccessToken());
         assertEquals("mock_refresh_token", response.getRefreshToken());
-        assertEquals("newuser@careerforge.local", response.getUser().getEmail());
+        assertEquals("student@careerforge.local", response.getUser().getEmail());
         verify(userRepository, times(1)).save(any(User.class));
+        verify(studentProfileService, times(1)).getOrCreateProfileEntity(10L);
+        verify(recruiterService, never()).getOrCreateProfileEntity(any());
+    }
+
+    @Test
+    void testRegisterRecruiterSuccessfully_AutoProvisionsProfile() {
+        RegisterRequest request = RegisterRequest.builder()
+                .email("recruiter@careerforge.local")
+                .password("Password123!")
+                .role(Role.ROLE_RECRUITER)
+                .build();
+
+        when(userRepository.existsByEmail(request.getEmail())).thenReturn(false);
+        when(passwordEncoder.encode(request.getPassword())).thenReturn("encoded_pass");
+
+        User savedUser = User.builder()
+                .id(20L)
+                .email("recruiter@careerforge.local")
+                .passwordHash("encoded_pass")
+                .role(Role.ROLE_RECRUITER)
+                .enabled(true)
+                .build();
+
+        when(userRepository.save(any(User.class))).thenReturn(savedUser);
+        when(jwtTokenProvider.generateAccessToken(any(UserPrincipal.class))).thenReturn("mock_access_token");
+        when(refreshTokenService.createRefreshToken(any())).thenReturn(
+                RefreshToken.builder().token("mock_refresh_token").build()
+        );
+
+        AuthResponse response = authService.register(request);
+
+        assertNotNull(response);
+        assertEquals("mock_access_token", response.getAccessToken());
+        assertEquals("mock_refresh_token", response.getRefreshToken());
+        assertEquals("recruiter@careerforge.local", response.getUser().getEmail());
+        verify(userRepository, times(1)).save(any(User.class));
+        verify(recruiterService, times(1)).getOrCreateProfileEntity(20L);
+        verify(studentProfileService, never()).getOrCreateProfileEntity(any());
     }
 
     @Test
@@ -85,5 +129,7 @@ class AuthServiceTest {
 
         assertThrows(BadRequestException.class, () -> authService.register(request));
         verify(userRepository, never()).save(any());
+        verify(studentProfileService, never()).getOrCreateProfileEntity(any());
+        verify(recruiterService, never()).getOrCreateProfileEntity(any());
     }
 }

@@ -4,6 +4,7 @@ import com.careerforge.dto.request.*;
 import com.careerforge.dto.response.*;
 import com.careerforge.entity.*;
 import com.careerforge.entity.enums.JobStatus;
+import com.careerforge.entity.enums.WorkMode;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.exception.ResourceNotFoundException;
 import com.careerforge.repository.JobRepository;
@@ -55,13 +56,15 @@ public class JobServiceImpl implements JobService {
 
         String slug = generateUniqueJobSlug(request.getTitle());
 
+        String location = StringUtils.hasText(request.getLocation()) ? request.getLocation().trim() : (request.getWorkMode() == WorkMode.REMOTE ? "Remote" : "Not Specified");
+
         Job job = Job.builder()
                 .company(recruiter.getCompany())
                 .recruiter(recruiter)
                 .title(request.getTitle().trim())
                 .slug(slug)
                 .description(request.getDescription().trim())
-                .location(request.getLocation().trim())
+                .location(location)
                 .workMode(request.getWorkMode())
                 .jobType(request.getJobType())
                 .experienceLevel(request.getExperienceLevel())
@@ -114,7 +117,8 @@ public class JobServiceImpl implements JobService {
 
         job.setTitle(request.getTitle().trim());
         job.setDescription(request.getDescription().trim());
-        job.setLocation(request.getLocation().trim());
+        String location = StringUtils.hasText(request.getLocation()) ? request.getLocation().trim() : (request.getWorkMode() == WorkMode.REMOTE ? "Remote" : "Not Specified");
+        job.setLocation(location);
         job.setWorkMode(request.getWorkMode());
         job.setJobType(request.getJobType());
         job.setExperienceLevel(request.getExperienceLevel());
@@ -345,7 +349,7 @@ public class JobServiceImpl implements JobService {
     // ==========================================
 
     private RecruiterProfile getValidatedRecruiterWithCompany(Long userId) {
-        RecruiterProfile recruiter = recruiterService.getProfileEntityByUserId(userId);
+        RecruiterProfile recruiter = recruiterService.getOrCreateProfileEntity(userId);
         if (recruiter.getCompany() == null) {
             throw new BadRequestException("Recruiter must be associated with a registered company before managing jobs");
         }
