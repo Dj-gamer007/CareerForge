@@ -6,6 +6,8 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Stores student job applications, snapshots resume and match score at application time,
@@ -74,4 +76,8 @@ public class Application extends BaseEntity {
 
     @Column(name = "withdrawn_at")
     private LocalDateTime withdrawnAt;
+
+    @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ApplicationStatusHistory> statusHistory = new ArrayList<>();
 }
