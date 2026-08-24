@@ -32,36 +32,42 @@ export function AdminAnalyticsPage() {
   const { isLoading: isOverviewLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsOverview,
     queryFn: () => adminService.getAnalyticsOverview(),
+    refetchInterval: 2500,
   });
 
   // Funnel Query
   const { data: funnel, isLoading: isFunnelLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsFunnel(),
     queryFn: () => adminService.getAnalyticsFunnel(),
+    refetchInterval: 2500,
   });
 
   // Job Analytics Query
   const { data: jobAnalytics, isLoading: isJobsLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsJobs(),
     queryFn: () => adminService.getAnalyticsJobs(),
+    refetchInterval: 2500,
   });
 
   // Company Analytics Query
   const { isLoading: isCompsLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsCompanies,
     queryFn: () => adminService.getAnalyticsCompanies(),
+    refetchInterval: 2500,
   });
 
   // User Analytics Query
   const { data: userAnalytics, isLoading: isUsersLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsUsers,
     queryFn: () => adminService.getAnalyticsUsers(),
+    refetchInterval: 2500,
   });
 
   // Trends Query
   const { data: trends, isLoading: isTrendsLoading } = useQuery({
     queryKey: queryKeys.admin.analyticsTrends(trendsWindowDays),
     queryFn: () => adminService.getAnalyticsTrends(trendsWindowDays),
+    refetchInterval: 2500,
   });
 
   const isLoading =
@@ -72,7 +78,7 @@ export function AdminAnalyticsPage() {
     isUsersLoading ||
     isTrendsLoading;
 
-  if (isLoading) return <LoadingSpinner text="Aggregating platform metrics and time-series trends..." />;
+  if (isLoading && !funnel) return <LoadingSpinner text="Aggregating platform metrics and time-series trends..." />;
 
   // Prepare Funnel Data
   const funnelChartData = funnel

@@ -4,6 +4,7 @@ import com.careerforge.dto.request.CompanyCreateRequest;
 import com.careerforge.dto.request.JobCreateRequest;
 import com.careerforge.dto.request.JobSkillItemRequest;
 import com.careerforge.dto.request.StudentProfileRequest;
+import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
 import com.careerforge.entity.Skill;
 import com.careerforge.entity.User;
@@ -11,6 +12,7 @@ import com.careerforge.entity.enums.ExperienceLevel;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.Role;
 import com.careerforge.entity.enums.WorkMode;
+import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.UserRepository;
 import com.careerforge.security.JwtTokenProvider;
@@ -66,6 +68,9 @@ class StudentSavedJobControllerIntegrationTest {
     private CompanyService companyService;
 
     @Autowired
+    private CompanyRepository companyRepository;
+
+    @Autowired
     private JobService jobService;
 
     private String studentToken;
@@ -100,11 +105,15 @@ class StudentSavedJobControllerIntegrationTest {
                 .location("Bengaluru")
                 .build());
 
-        // Create company and job
-        companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
+        // Create company and verify for job testing
+        CompanyResponse comp = companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
                 .name("AlphaTech Innovations")
                 .industry("Software")
                 .build());
+        companyRepository.findById(comp.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         Skill javaSkill = skillRepository.findByNameIgnoreCase("Java")
                 .orElseGet(() -> skillRepository.save(Skill.builder().name("Java").category("Backend").build()));

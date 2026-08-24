@@ -51,6 +51,7 @@ public class ApplicationServiceImpl implements ApplicationService {
     private final SkillMatchingService skillMatchingService;
     private final NotificationService notificationService;
     private final StorageService storageService;
+    private final ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
 
     // ==========================================
     // Student Operations
@@ -124,6 +125,17 @@ public class ApplicationServiceImpl implements ApplicationService {
         log.info("Application submitted successfully (id: {}) by student ID: {} for job ID: {}",
                 saved.getId(), studentProfile.getId(), job.getId());
 
+        // Append initial status history
+        ApplicationStatusHistory initialHistory = ApplicationStatusHistory.builder()
+                .application(saved)
+                .fromStatus(null)
+                .toStatus(ApplicationStatus.APPLIED)
+                .changedAt(saved.getCreatedAt() != null ? saved.getCreatedAt() : LocalDateTime.now())
+                .changedBy("STUDENT")
+                .notes("Application submitted by candidate")
+                .build();
+        applicationStatusHistoryRepository.save(initialHistory);
+
         // Send notification to student
         notificationService.sendNotification(
                 userId,
@@ -132,14 +144,25 @@ public class ApplicationServiceImpl implements ApplicationService {
                 NotificationType.APPLICATION_UPDATE
         );
 
+        // Send notification to recruiter who owns the job posting
+        if (job.getRecruiter() != null && job.getRecruiter().getUser() != null) {
+            String candidateName = (studentProfile.getFirstName() + " " + studentProfile.getLastName()).trim();
+            notificationService.sendNotification(
+                    job.getRecruiter().getUser().getId(),
+                    "New application received",
+                    candidateName + " applied for " + job.getTitle() + ".",
+                    NotificationType.APPLICATION_UPDATE
+            );
+        }
+
         return mapToStudentResponse(saved);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public PagedResponse<StudentApplicationResponse> getMyApplications(Long userId, ApplicationStatus status, Pageable pageable) {
+    public PagedResponse<StudentApplicationResponse> getMyApplications(Long userId, ApplicationStatus status, String tab, Pageable pageable) {
         StudentProfile studentProfile = getStudentProfileByUserId(userId);
-        Specification<Application> spec = ApplicationSpecification.buildStudentSpecification(studentProfile.getId(), status);
+        Specification<Application> spec = ApplicationSpecification.buildStudentSpecification(studentProfile.getId(), status, tab);
         Page<Application> page = applicationRepository.findAll(spec, pageable);
 
         List<StudentApplicationResponse> responses = page.getContent().stream()
@@ -147,6 +170,30 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .collect(Collectors.toList());
 
         return PagedResponse.of(page, responses);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ApplicationTabCountsResponse getStudentApplicationCounts(Long userId) {
+        StudentProfile studentProfile = getStudentProfileByUserId(userId);
+        Long profileId = studentProfile.getId();
+
+        Specification<Application> allSpec = ApplicationSpecification.buildStudentSpecification(profileId, null, "ALL");
+        Specification<Application> appliedSpec = ApplicationSpecification.buildStudentSpecification(profileId, null, "APPLIED");
+        Specification<Application> shortlistedSpec = ApplicationSpecification.buildStudentSpecification(profileId, null, "SHORTLISTED");
+        Specification<Application> interviewSpec = ApplicationSpecification.buildStudentSpecification(profileId, null, "INTERVIEW");
+
+        long allCount = applicationRepository.count(allSpec);
+        long appliedCount = applicationRepository.count(appliedSpec);
+        long shortlistedCount = applicationRepository.count(shortlistedSpec);
+        long interviewCount = applicationRepository.count(interviewSpec);
+
+        return ApplicationTabCountsResponse.builder()
+                .all(allCount)
+                .applied(appliedCount)
+                .shortlisted(shortlistedCount)
+                .interview(interviewCount)
+                .build();
     }
 
     @Override
@@ -180,11 +227,23 @@ public class ApplicationServiceImpl implements ApplicationService {
             throw new BadRequestException("Applications in status '" + application.getStatus() + "' cannot be withdrawn");
         }
 
+        ApplicationStatus previousStatus = application.getStatus();
         application.setStatus(ApplicationStatus.WITHDRAWN);
         application.setWithdrawnAt(LocalDateTime.now());
 
         Application saved = applicationRepository.save(application);
         log.info("Application ID: {} withdrawn by student ID: {}", applicationId, studentProfile.getId());
+
+        // Append withdrawal status history
+        ApplicationStatusHistory withdrawalHistory = ApplicationStatusHistory.builder()
+                .application(saved)
+                .fromStatus(previousStatus)
+                .toStatus(ApplicationStatus.WITHDRAWN)
+                .changedAt(saved.getWithdrawnAt())
+                .changedBy("STUDENT")
+                .notes("Application withdrawn by candidate")
+                .build();
+        applicationStatusHistoryRepository.save(withdrawalHistory);
 
         notificationService.sendNotification(
                 userId,
@@ -295,6 +354,17 @@ public class ApplicationServiceImpl implements ApplicationService {
         Application saved = applicationRepository.save(application);
         log.info("Application ID: {} status transitioned from {} to {} by recruiter user ID: {}",
                 applicationId, currentStatus, targetStatus, userId);
+
+        // Append transition status history
+        ApplicationStatusHistory transitionHistory = ApplicationStatusHistory.builder()
+                .application(saved)
+                .fromStatus(currentStatus)
+                .toStatus(targetStatus)
+                .changedAt(LocalDateTime.now())
+                .changedBy("RECRUITER")
+                .notes(request.getRecruiterNotes() != null ? request.getRecruiterNotes().trim() : null)
+                .build();
+        applicationStatusHistoryRepository.save(transitionHistory);
 
         // Notify candidate
         Long candidateUserId = application.getStudentProfile().getUser().getId();
@@ -507,6 +577,158 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .withdrawnAt(app.getWithdrawnAt())
                 .updatedAt(app.getUpdatedAt())
                 .skillBreakdown(liveMatch)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ApplicationStatusHistoryResponse> getApplicationHistoryForStudent(Long userId, Long applicationId) {
+        StudentProfile studentProfile = getStudentProfileByUserId(userId);
+        Application application = applicationRepository.findByIdAndStudentProfile_Id(applicationId, studentProfile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Application", "id", applicationId));
+
+        List<ApplicationStatusHistory> historyList = applicationStatusHistoryRepository
+                .findByApplication_IdOrderByChangedAtAscIdAsc(application.getId());
+
+        if (historyList.isEmpty()) {
+            return reconstructLegacyHistory(application);
+        }
+
+        return historyList.stream()
+                .map(this::mapToHistoryResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ApplicationStatusHistoryResponse> getApplicationHistoryForRecruiter(Long userId, Long applicationId) {
+        RecruiterProfile recruiter = getValidatedRecruiterWithCompany(userId);
+        Application application = applicationRepository.findByIdAndJob_Company_Id(applicationId, recruiter.getCompany().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Application", "id", applicationId));
+
+        List<ApplicationStatusHistory> historyList = applicationStatusHistoryRepository
+                .findByApplication_IdOrderByChangedAtAscIdAsc(application.getId());
+
+        if (historyList.isEmpty()) {
+            return reconstructLegacyHistory(application);
+        }
+
+        return historyList.stream()
+                .map(this::mapToHistoryResponse)
+                .collect(Collectors.toList());
+    }
+
+    private List<ApplicationStatusHistoryResponse> reconstructLegacyHistory(Application app) {
+        List<ApplicationStatusHistoryResponse> history = new java.util.ArrayList<>();
+        LocalDateTime submissionTime = app.getCreatedAt() != null ? app.getCreatedAt() : LocalDateTime.now();
+
+        // 1. Initial submission (always present for any application)
+        history.add(ApplicationStatusHistoryResponse.builder()
+                .applicationId(app.getId())
+                .fromStatus(null)
+                .toStatus(ApplicationStatus.APPLIED)
+                .changedAt(submissionTime)
+                .changedBy("STUDENT")
+                .notes("Application submitted by candidate")
+                .build());
+
+        // 2. Under Review milestone (if reviewedAt exists or current status has progressed past APPLIED)
+        if (app.getReviewedAt() != null || (app.getStatus() != ApplicationStatus.APPLIED && app.getStatus() != ApplicationStatus.WITHDRAWN)) {
+            LocalDateTime reviewTime = app.getReviewedAt() != null ? app.getReviewedAt() : submissionTime.plusMinutes(1);
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(ApplicationStatus.APPLIED)
+                    .toStatus(ApplicationStatus.UNDER_REVIEW)
+                    .changedAt(reviewTime)
+                    .changedBy("RECRUITER")
+                    .build());
+        }
+
+        // 3. Shortlisted milestone (if shortlistedAt exists or status is SHORTLISTED, INTERVIEW_SCHEDULED, ACCEPTED)
+        if (app.getShortlistedAt() != null || app.getStatus() == ApplicationStatus.SHORTLISTED
+                || app.getStatus() == ApplicationStatus.INTERVIEW_SCHEDULED || app.getStatus() == ApplicationStatus.ACCEPTED) {
+            LocalDateTime shortlistTime = app.getShortlistedAt() != null ? app.getShortlistedAt()
+                    : (app.getReviewedAt() != null ? app.getReviewedAt().plusMinutes(1) : submissionTime.plusMinutes(2));
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(ApplicationStatus.UNDER_REVIEW)
+                    .toStatus(ApplicationStatus.SHORTLISTED)
+                    .changedAt(shortlistTime)
+                    .changedBy("RECRUITER")
+                    .build());
+        }
+
+        // 4. Interview Scheduled milestone (if interviewScheduledAt exists or status is INTERVIEW_SCHEDULED, ACCEPTED)
+        if (app.getInterviewScheduledAt() != null || app.getStatus() == ApplicationStatus.INTERVIEW_SCHEDULED
+                || app.getStatus() == ApplicationStatus.ACCEPTED) {
+            LocalDateTime interviewTime = app.getInterviewScheduledAt() != null ? app.getInterviewScheduledAt()
+                    : (app.getShortlistedAt() != null ? app.getShortlistedAt().plusMinutes(1) : submissionTime.plusMinutes(3));
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(ApplicationStatus.SHORTLISTED)
+                    .toStatus(ApplicationStatus.INTERVIEW_SCHEDULED)
+                    .changedAt(interviewTime)
+                    .changedBy("RECRUITER")
+                    .notes("Interview scheduled")
+                    .build());
+        }
+
+        // 5. Terminal status events
+        if (app.getStatus() == ApplicationStatus.ACCEPTED) {
+            ApplicationStatus from = app.getInterviewScheduledAt() != null ? ApplicationStatus.INTERVIEW_SCHEDULED
+                    : (app.getShortlistedAt() != null ? ApplicationStatus.SHORTLISTED
+                    : (app.getReviewedAt() != null ? ApplicationStatus.UNDER_REVIEW : ApplicationStatus.APPLIED));
+            LocalDateTime acceptTime = app.getUpdatedAt() != null ? app.getUpdatedAt() : submissionTime.plusMinutes(4);
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(from)
+                    .toStatus(ApplicationStatus.ACCEPTED)
+                    .changedAt(acceptTime)
+                    .changedBy("RECRUITER")
+                    .notes("Application accepted")
+                    .build());
+        } else if (app.getStatus() == ApplicationStatus.REJECTED) {
+            ApplicationStatus from = app.getInterviewScheduledAt() != null ? ApplicationStatus.INTERVIEW_SCHEDULED
+                    : (app.getShortlistedAt() != null ? ApplicationStatus.SHORTLISTED
+                    : (app.getReviewedAt() != null ? ApplicationStatus.UNDER_REVIEW : ApplicationStatus.APPLIED));
+            LocalDateTime rejectTime = app.getUpdatedAt() != null ? app.getUpdatedAt() : submissionTime.plusMinutes(4);
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(from)
+                    .toStatus(ApplicationStatus.REJECTED)
+                    .changedAt(rejectTime)
+                    .changedBy("RECRUITER")
+                    .notes("Application not selected")
+                    .build());
+        } else if (app.getStatus() == ApplicationStatus.WITHDRAWN) {
+            ApplicationStatus from = app.getInterviewScheduledAt() != null ? ApplicationStatus.INTERVIEW_SCHEDULED
+                    : (app.getShortlistedAt() != null ? ApplicationStatus.SHORTLISTED
+                    : (app.getReviewedAt() != null ? ApplicationStatus.UNDER_REVIEW : ApplicationStatus.APPLIED));
+            LocalDateTime withdrawTime = app.getWithdrawnAt() != null ? app.getWithdrawnAt()
+                    : (app.getUpdatedAt() != null ? app.getUpdatedAt() : submissionTime.plusMinutes(4));
+            history.add(ApplicationStatusHistoryResponse.builder()
+                    .applicationId(app.getId())
+                    .fromStatus(from)
+                    .toStatus(ApplicationStatus.WITHDRAWN)
+                    .changedAt(withdrawTime)
+                    .changedBy("STUDENT")
+                    .notes("Application withdrawn by candidate")
+                    .build());
+        }
+
+        return history;
+    }
+
+    private ApplicationStatusHistoryResponse mapToHistoryResponse(ApplicationStatusHistory history) {
+        return ApplicationStatusHistoryResponse.builder()
+                .id(history.getId())
+                .applicationId(history.getApplication().getId())
+                .fromStatus(history.getFromStatus())
+                .toStatus(history.getToStatus())
+                .changedAt(history.getChangedAt())
+                .changedBy(history.getChangedBy())
+                .reason(history.getReason())
+                .notes(history.getNotes())
                 .build();
     }
 }

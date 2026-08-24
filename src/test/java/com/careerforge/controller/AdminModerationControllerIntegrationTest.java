@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -274,6 +275,114 @@ class AdminModerationControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Update company verification - Reject pending company dispatches notification and updates status to REJECTED")
+    void testUpdateCompanyVerification_Reject() throws Exception {
+        CompanyVerificationUpdateRequest request = CompanyVerificationUpdateRequest.builder()
+                .verificationStatus(CompanyVerificationStatus.REJECTED)
+                .reason("Invalid corporate registration documents")
+                .build();
+
+        mockMvc.perform(patch("/api/v1/admin/companies/" + pendingCompany.getId() + "/verification")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.verificationStatus").value("REJECTED"));
+    }
+
+    @Test
+    @DisplayName("Recruiter registers company - Defaults to PENDING, appears in Admin pending list, and enforces publish guard")
+    void testRecruiterRegisterCompany_LifecycleFlow() throws Exception {
+        // 1. Create a new unassociated recruiter
+        User newRecruiterUser = userRepository.save(User.builder()
+                .email("unassociated_recruiter@careerforge.local")
+                .passwordHash(passwordEncoder.encode("RecruiterPass123!"))
+                .role(Role.ROLE_RECRUITER)
+                .enabled(true)
+                .build());
+        String newRecruiterToken = jwtTokenProvider.generateAccessToken(UserPrincipal.create(newRecruiterUser));
+
+        com.careerforge.dto.request.CompanyCreateRequest createRequest = com.careerforge.dto.request.CompanyCreateRequest.builder()
+                .name("Beta Solutions Inc")
+                .industry("Fintech")
+                .companySize("11-50")
+                .location("Mumbai")
+                .build();
+
+        // 2. Recruiter registers company -> must be PENDING
+        String responseBody = mockMvc.perform(post("/api/v1/companies")
+                        .header("Authorization", "Bearer " + newRecruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("Beta Solutions Inc"))
+                .andExpect(jsonPath("$.data.verificationStatus").value("PENDING"))
+                .andReturn().getResponse().getContentAsString();
+
+        long createdCompanyId = objectMapper.readTree(responseBody).path("data").path("id").asLong();
+
+        // 3. Admin queries PENDING companies -> newly registered company is present
+        mockMvc.perform(get("/api/v1/admin/companies")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("verificationStatus", "PENDING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[*].id", hasItem((int) createdCompanyId)))
+                .andExpect(jsonPath("$.data.content[*].verificationStatus", hasItem("PENDING")));
+
+        // 4. Create a draft job for this pending company
+        com.careerforge.dto.request.JobCreateRequest jobRequest = com.careerforge.dto.request.JobCreateRequest.builder()
+                .title("Associate QA Engineer")
+                .description("Quality assurance testing")
+                .workMode(WorkMode.ONSITE)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.ENTRY_LEVEL)
+                .skills(List.of(com.careerforge.dto.request.JobSkillItemRequest.builder()
+                        .skillId(testSkill.getId())
+                        .isRequired(true)
+                        .minimumProficiency(SkillProficiency.INTERMEDIATE)
+                        .build()))
+                .deadline(LocalDateTime.now().plusDays(15))
+                .build();
+
+        String jobResp = mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", "Bearer " + newRecruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(jobRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andReturn().getResponse().getContentAsString();
+
+        long createdJobId = objectMapper.readTree(jobResp).path("data").path("id").asLong();
+
+        // 5. Recruiter tries to PUBLISH job while company is PENDING -> must fail with 400 Bad Request
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJobId + "/publish")
+                        .header("Authorization", "Bearer " + newRecruiterToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("Cannot publish jobs for an unverified company")));
+
+        // 6. Admin approves company -> status becomes VERIFIED
+        CompanyVerificationUpdateRequest approveRequest = CompanyVerificationUpdateRequest.builder()
+                .verificationStatus(CompanyVerificationStatus.VERIFIED)
+                .reason("Official registration verified")
+                .build();
+
+        mockMvc.perform(patch("/api/v1/admin/companies/" + createdCompanyId + "/verification")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(approveRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.verificationStatus").value("VERIFIED"));
+
+        // 7. Recruiter can now successfully PUBLISH the job
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJobId + "/publish")
+                        .header("Authorization", "Bearer " + newRecruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
     }
 
     // ==========================================

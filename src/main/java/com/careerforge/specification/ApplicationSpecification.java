@@ -66,13 +66,42 @@ public class ApplicationSpecification {
     }
 
     public static Specification<Application> buildStudentSpecification(Long studentProfileId, ApplicationStatus status) {
+        return buildStudentSpecification(studentProfileId, status, null);
+    }
+
+    public static Specification<Application> buildStudentSpecification(Long studentProfileId, ApplicationStatus status, String tab) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
             // 1. Mandatory student profile scoping
             predicates.add(cb.equal(root.get("studentProfile").get("id"), studentProfileId));
 
-            // 2. Status is the single source of truth
+            // 2. Milestone Tab Semantics (Naukri-style persistent milestones)
+            if (StringUtils.hasText(tab)) {
+                String normalizedTab = tab.trim().toUpperCase();
+                switch (normalizedTab) {
+                    case "APPLIED" -> {
+                        // All applications submitted by student belong to Applied tab permanently
+                    }
+                    case "SHORTLISTED" -> {
+                        // Reached the shortlisted milestone
+                        Predicate shortlistedNotNull = cb.isNotNull(root.get("shortlistedAt"));
+                        Predicate statusShortlisted = cb.equal(root.get("status"), ApplicationStatus.SHORTLISTED);
+                        Predicate statusInterview = cb.equal(root.get("status"), ApplicationStatus.INTERVIEW_SCHEDULED);
+                        Predicate statusAccepted = cb.equal(root.get("status"), ApplicationStatus.ACCEPTED);
+                        predicates.add(cb.or(shortlistedNotNull, statusShortlisted, statusInterview, statusAccepted));
+                    }
+                    case "INTERVIEW", "INTERVIEW_SCHEDULED" -> {
+                        // Current interview pipeline: applications currently in INTERVIEW_SCHEDULED status
+                        predicates.add(cb.equal(root.get("status"), ApplicationStatus.INTERVIEW_SCHEDULED));
+                    }
+                    case "ALL" -> {
+                        // All applications
+                    }
+                }
+            }
+
+            // 3. Current Status Filter (single source of truth for exact current status)
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
             }

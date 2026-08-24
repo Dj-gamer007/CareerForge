@@ -55,6 +55,9 @@ class Phase4EndToEndWorkflowIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private CompanyRepository companyRepository;
+
+    @Autowired
     private SkillRepository skillRepository;
 
     @Autowired
@@ -260,6 +263,10 @@ class Phase4EndToEndWorkflowIntegrationTest {
                 .andReturn();
 
         Long companyId = objectMapper.readTree(companyRes.getResponse().getContentAsString()).get("data").get("id").asLong();
+        companyRepository.findById(companyId).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         // ---------------------------------------------------------------------
         // 8. Create Job Posting as DRAFT
@@ -858,7 +865,12 @@ class Phase4EndToEndWorkflowIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        return objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+        Long companyId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+        companyRepository.findById(companyId).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
+        return companyId;
     }
 
     private Long createAndPublishJob(String token, String title) throws Exception {

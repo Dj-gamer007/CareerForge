@@ -1,6 +1,7 @@
 package com.careerforge.service;
 
 import com.careerforge.dto.response.analytics.*;
+import com.careerforge.entity.Application;
 import com.careerforge.entity.enums.*;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.repository.*;
@@ -88,44 +89,205 @@ class AdminAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("Application Funnel - populates all enum statuses and calculates accurate percentages")
-    void testGetApplicationFunnel_Success() {
-        List<MetricCountDto<ApplicationStatus>> counts = List.of(
-                new MetricCountDto<>(ApplicationStatus.APPLIED, 50L),
-                new MetricCountDto<>(ApplicationStatus.UNDER_REVIEW, 30L),
-                new MetricCountDto<>(ApplicationStatus.SHORTLISTED, 15L),
-                new MetricCountDto<>(ApplicationStatus.INTERVIEW_SCHEDULED, 10L),
-                new MetricCountDto<>(ApplicationStatus.ACCEPTED, 5L),
-                new MetricCountDto<>(ApplicationStatus.REJECTED, 20L),
-                new MetricCountDto<>(ApplicationStatus.WITHDRAWN, 5L)
+    @DisplayName("Lifecycle Funnel Scenario 1 - Accepted application counts in all stages")
+    void testAcceptedApplication_PassesAllStages() {
+        Application app = Application.builder().id(1L).status(ApplicationStatus.ACCEPTED).build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getTotalApplications()).isEqualTo(1L);
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(1L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(1L);
+        assertThat(funnel.getAcceptedCount()).isEqualTo(1L);
+        assertThat(funnel.getRejectedCount()).isEqualTo(0L);
+        assertThat(funnel.getWithdrawnCount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 2 - Rejected after Interview counts in Applied, Review, Shortlist, Interview, and Rejected")
+    void testRejectedAfterInterview_PassesInterviewAndPriorStages() {
+        Application app = Application.builder().id(2L)
+                .status(ApplicationStatus.REJECTED)
+                .interviewScheduledAt(LocalDateTime.now().minusDays(2))
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(1L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(1L);
+        assertThat(funnel.getAcceptedCount()).isEqualTo(0L);
+        assertThat(funnel.getRejectedCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 3 - Rejected after Shortlist counts in Applied, Review, Shortlist, and Rejected")
+    void testRejectedAfterShortlist_PassesShortlistAndPriorStages() {
+        Application app = Application.builder().id(3L)
+                .status(ApplicationStatus.REJECTED)
+                .shortlistedAt(LocalDateTime.now().minusDays(3))
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(1L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(0L);
+        assertThat(funnel.getRejectedCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 4 - Rejected during Under Review counts only in Applied, Review, and Rejected")
+    void testRejectedDuringUnderReview_PassesOnlyReviewAndApplied() {
+        Application app = Application.builder().id(4L)
+                .status(ApplicationStatus.REJECTED)
+                .reviewedAt(LocalDateTime.now().minusDays(4))
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(0L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(0L);
+        assertThat(funnel.getRejectedCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 5 - Withdrawn after Interview counts in Applied, Review, Shortlist, Interview, and Withdrawn")
+    void testWithdrawnAfterInterview_PassesInterviewAndPriorStages() {
+        Application app = Application.builder().id(5L)
+                .status(ApplicationStatus.WITHDRAWN)
+                .interviewScheduledAt(LocalDateTime.now().minusDays(2))
+                .withdrawnAt(LocalDateTime.now())
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(1L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(1L);
+        assertThat(funnel.getWithdrawnCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 6 - Withdrawn at earlier stage (Under Review) counts only in Applied, Review, and Withdrawn")
+    void testWithdrawnAtEarlierStage_PassesOnlyReviewAndApplied() {
+        Application app = Application.builder().id(6L)
+                .status(ApplicationStatus.WITHDRAWN)
+                .reviewedAt(LocalDateTime.now().minusDays(5))
+                .withdrawnAt(LocalDateTime.now())
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(0L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(0L);
+        assertThat(funnel.getWithdrawnCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 7 - Application that remains Under Review counts in Applied and Review")
+    void testApplicationRemainsUnderReview() {
+        Application app = Application.builder().id(7L)
+                .status(ApplicationStatus.UNDER_REVIEW)
+                .reviewedAt(LocalDateTime.now().minusDays(1))
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(0L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(0L);
+        assertThat(funnel.getAcceptedCount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 8 - Application that remains Shortlisted counts in Applied, Review, and Shortlist")
+    void testApplicationRemainsShortlisted() {
+        Application app = Application.builder().id(8L)
+                .status(ApplicationStatus.SHORTLISTED)
+                .shortlistedAt(LocalDateTime.now().minusDays(1))
+                .build();
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(List.of(app));
+
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+
+        assertThat(funnel.getAppliedCount()).isEqualTo(1L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(1L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(1L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("Lifecycle Funnel Scenario 9 - Mixed 10-application history maintains Applied >= Review >= Shortlist >= Interview and terminal outcomes sum")
+    void testMixedLifecycleHistories_MaintainsFunnelInvariantAndTerminalSum() {
+        // 7 Accepted, 1 Rejected after Interview, 1 Rejected during Review, 1 Withdrawn during Review = 10 Total
+        List<Application> apps = List.of(
+                Application.builder().id(1L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(2L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(3L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(4L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(5L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(6L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(7L).status(ApplicationStatus.ACCEPTED).interviewScheduledAt(LocalDateTime.now()).build(),
+                Application.builder().id(8L).status(ApplicationStatus.REJECTED).interviewScheduledAt(LocalDateTime.now()).build(), // rejected after interview
+                Application.builder().id(9L).status(ApplicationStatus.REJECTED).reviewedAt(LocalDateTime.now()).build(), // rejected in review
+                Application.builder().id(10L).status(ApplicationStatus.WITHDRAWN).reviewedAt(LocalDateTime.now()).withdrawnAt(LocalDateTime.now()).build() // withdrawn in review
         );
 
-        when(applicationRepository.countApplicationsGroupedByStatus(null, null, null, null))
-                .thenReturn(counts);
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(apps);
 
-        ApplicationFunnelAnalyticsResponse funnel =
-                adminAnalyticsService.getApplicationFunnel(null, null, null, null);
+        ApplicationFunnelAnalyticsResponse funnel = adminAnalyticsService.getApplicationFunnel(null, null, null, null);
 
-        assertThat(funnel).isNotNull();
-        assertThat(funnel.getTotalApplications()).isEqualTo(135L);
-        assertThat(funnel.getAppliedCount()).isEqualTo(50L);
-        assertThat(funnel.getUnderReviewCount()).isEqualTo(30L);
-        assertThat(funnel.getShortlistedCount()).isEqualTo(15L);
-        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(10L);
-        assertThat(funnel.getAcceptedCount()).isEqualTo(5L);
-        assertThat(funnel.getRejectedCount()).isEqualTo(20L);
-        assertThat(funnel.getWithdrawnCount()).isEqualTo(5L);
+        assertThat(funnel.getTotalApplications()).isEqualTo(10L);
+        assertThat(funnel.getAppliedCount()).isEqualTo(10L);
+        assertThat(funnel.getUnderReviewCount()).isEqualTo(10L);
+        assertThat(funnel.getShortlistedCount()).isEqualTo(8L);
+        assertThat(funnel.getInterviewScheduledCount()).isEqualTo(8L);
+        assertThat(funnel.getAcceptedCount()).isEqualTo(7L);
+        assertThat(funnel.getRejectedCount()).isEqualTo(2L);
+        assertThat(funnel.getWithdrawnCount()).isEqualTo(1L);
 
-        // Active in pipeline = 50 + 30 + 15 + 10 = 105 / 135 = 77.78%
-        assertThat(funnel.getActiveInPipelinePercentage()).isEqualTo(77.78);
-        // Acceptance rate = 5 / 135 = 3.70%
-        assertThat(funnel.getAcceptanceRatePercentage()).isEqualTo(3.70);
+        // Verify Invariants: Applied >= Under Review >= Shortlisted >= Interview >= Accepted
+        assertThat(funnel.getAppliedCount()).isGreaterThanOrEqualTo(funnel.getUnderReviewCount());
+        assertThat(funnel.getUnderReviewCount()).isGreaterThanOrEqualTo(funnel.getShortlistedCount());
+        assertThat(funnel.getShortlistedCount()).isGreaterThanOrEqualTo(funnel.getInterviewScheduledCount());
+        assertThat(funnel.getInterviewScheduledCount()).isGreaterThanOrEqualTo(funnel.getAcceptedCount());
+
+        // Verify Terminal Sum
+        assertThat(funnel.getAcceptedCount() + funnel.getRejectedCount() + funnel.getWithdrawnCount())
+                .isEqualTo(funnel.getTotalApplications());
     }
 
     @Test
     @DisplayName("Application Funnel - handles empty results without division by zero errors")
     void testGetApplicationFunnel_ZeroTotal_HandlesDivideByZero() {
-        when(applicationRepository.countApplicationsGroupedByStatus(null, null, null, null))
+        when(applicationRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
                 .thenReturn(List.of());
 
         ApplicationFunnelAnalyticsResponse funnel =

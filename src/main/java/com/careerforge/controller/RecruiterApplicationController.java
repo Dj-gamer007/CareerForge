@@ -2,10 +2,7 @@ package com.careerforge.controller;
 
 import com.careerforge.dto.request.ApplicationNotesRequest;
 import com.careerforge.dto.request.ApplicationStatusUpdateRequest;
-import com.careerforge.dto.response.ApiResponse;
-import com.careerforge.dto.response.PagedResponse;
-import com.careerforge.dto.response.RecruiterApplicationDetailResponse;
-import com.careerforge.dto.response.RecruiterApplicationSummaryResponse;
+import com.careerforge.dto.response.*;
 import com.careerforge.entity.enums.ApplicationStatus;
 import com.careerforge.security.UserPrincipal;
 import com.careerforge.service.ApplicationService;
@@ -22,6 +19,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 import java.math.BigDecimal;
 
@@ -62,6 +61,14 @@ public class RecruiterApplicationController {
             @PathVariable Long id) {
         RecruiterApplicationDetailResponse response = applicationService.getApplicationDetailForRecruiter(userPrincipal.getId(), id);
         return ResponseEntity.ok(ApiResponse.success("Application details retrieved successfully", response));
+    }
+
+    @GetMapping("/applications/{id}/history")
+    public ResponseEntity<ApiResponse<List<ApplicationStatusHistoryResponse>>> getApplicationHistory(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @PathVariable Long id) {
+        List<ApplicationStatusHistoryResponse> response = applicationService.getApplicationHistoryForRecruiter(userPrincipal.getId(), id);
+        return ResponseEntity.ok(ApiResponse.success("Application history retrieved successfully", response));
     }
 
     @PatchMapping("/applications/{id}/status")

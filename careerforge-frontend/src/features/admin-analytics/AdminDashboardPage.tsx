@@ -22,9 +22,10 @@ export function AdminDashboardPage() {
   const { data: overview, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.admin.analyticsOverview,
     queryFn: () => adminService.getAnalyticsOverview(),
+    refetchInterval: 2500,
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading administrative dashboard..." />;
+  if (isLoading && !overview) return <LoadingSpinner text="Loading administrative dashboard..." />;
   if (isError) {
     return (
       <ErrorState

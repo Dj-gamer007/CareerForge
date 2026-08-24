@@ -2,6 +2,7 @@ package com.careerforge.controller;
 
 import com.careerforge.dto.request.CompanyCreateRequest;
 import com.careerforge.dto.request.CompanyUpdateRequest;
+import com.careerforge.entity.Company;
 import com.careerforge.entity.User;
 import com.careerforge.entity.enums.Role;
 import com.careerforge.repository.CompanyRepository;
@@ -95,7 +96,7 @@ class CompanyControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.name").value("Innovate Labs"))
-                .andExpect(jsonPath("$.data.verificationStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$.data.verificationStatus").value("PENDING"));
 
         // 2. Get My Company
         mockMvc.perform(get("/api/v1/companies/my-company")
@@ -118,7 +119,16 @@ class CompanyControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.industry").value("Artificial Intelligence"))
                 .andExpect(jsonPath("$.data.location").value("Hyderabad, India"));
 
-        // 4. Public Directory includes company
+        // 4. Pending Company does NOT appear in public verified directory
+        mockMvc.perform(get("/api/v1/companies?search=Innovate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(0)));
+
+        // 5. Admin verifies company -> now appears in public verified directory
+        Company createdCompany = companyRepository.findByNameIgnoreCase("Innovate Labs").orElseThrow();
+        createdCompany.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+        companyRepository.save(createdCompany);
+
         mockMvc.perform(get("/api/v1/companies?search=Innovate"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content", hasSize(greaterThanOrEqualTo(1))));

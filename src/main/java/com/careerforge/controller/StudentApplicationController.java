@@ -2,6 +2,8 @@ package com.careerforge.controller;
 
 import com.careerforge.dto.request.ApplicationSubmitRequest;
 import com.careerforge.dto.response.ApiResponse;
+import com.careerforge.dto.response.ApplicationStatusHistoryResponse;
+import com.careerforge.dto.response.ApplicationTabCountsResponse;
 import com.careerforge.dto.response.PagedResponse;
 import com.careerforge.dto.response.SkillMatchResponse;
 import com.careerforge.dto.response.StudentApplicationDetailResponse;
@@ -19,6 +21,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/students")
@@ -40,6 +44,7 @@ public class StudentApplicationController {
     public ResponseEntity<ApiResponse<PagedResponse<StudentApplicationResponse>>> getMyApplications(
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestParam(required = false) ApplicationStatus status,
+            @RequestParam(required = false) String tab,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -49,8 +54,15 @@ public class StudentApplicationController {
                 Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        PagedResponse<StudentApplicationResponse> response = applicationService.getMyApplications(userPrincipal.getId(), status, pageable);
+        PagedResponse<StudentApplicationResponse> response = applicationService.getMyApplications(userPrincipal.getId(), status, tab, pageable);
         return ResponseEntity.ok(ApiResponse.success("Applications retrieved successfully", response));
+    }
+
+    @GetMapping("/applications/counts")
+    public ResponseEntity<ApiResponse<ApplicationTabCountsResponse>> getMyApplicationCounts(
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        ApplicationTabCountsResponse counts = applicationService.getStudentApplicationCounts(userPrincipal.getId());
+        return ResponseEntity.ok(ApiResponse.success("Application counts retrieved successfully", counts));
     }
 
     @GetMapping("/applications/{id}")
@@ -59,6 +71,14 @@ public class StudentApplicationController {
             @PathVariable Long id) {
         StudentApplicationDetailResponse response = applicationService.getMyApplicationDetail(userPrincipal.getId(), id);
         return ResponseEntity.ok(ApiResponse.success("Application details retrieved successfully", response));
+    }
+
+    @GetMapping("/applications/{id}/history")
+    public ResponseEntity<ApiResponse<List<ApplicationStatusHistoryResponse>>> getMyApplicationHistory(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @PathVariable Long id) {
+        List<ApplicationStatusHistoryResponse> response = applicationService.getApplicationHistoryForStudent(userPrincipal.getId(), id);
+        return ResponseEntity.ok(ApiResponse.success("Application history retrieved successfully", response));
     }
 
     @PatchMapping("/applications/{id}/withdraw")

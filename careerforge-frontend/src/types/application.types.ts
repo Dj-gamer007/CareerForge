@@ -56,3 +56,25 @@ export interface RecruiterApplicationDetailResponse extends RecruiterApplication
   resumeId?: number;
   resumeFileName?: string;
 }
+
+export interface ApplicationStatusHistoryResponse {
+  id: number;
+  applicationId: number;
+  fromStatus: ApplicationStatus | null;
+  toStatus: ApplicationStatus;
+  changedAt: string;
+  changedBy: string;
+  reason?: string;
+  notes?: string;
+}
+
+export type ApplicationTab = 'ALL' | 'APPLIED' | 'SHORTLISTED' | 'INTERVIEW';
+
+export interface ApplicationTabCountsResponse {
+  all: number;
+  applied: number;
+  shortlisted: number;
+  interview: number;
+}
+
+

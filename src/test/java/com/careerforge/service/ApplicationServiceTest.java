@@ -53,6 +53,8 @@ class ApplicationServiceTest {
     private NotificationService notificationService;
     @Mock
     private StorageService storageService;
+    @Mock
+    private ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
 
     @InjectMocks
     private ApplicationServiceImpl applicationService;
@@ -92,6 +94,7 @@ class ApplicationServiceTest {
                 .title("Software Engineer")
                 .slug("software-engineer-100")
                 .company(company)
+                .recruiter(recruiterProfile)
                 .status(JobStatus.PUBLISHED)
                 .deadline(LocalDateTime.now().plusDays(30))
                 .build();

@@ -32,6 +32,18 @@ const mockJobs = [
 let jobsState = [...mockJobs];
 
 const server = setupServer(
+  http.get('/api/v1/companies/my-company', () => {
+    return HttpResponse.json({
+      success: true,
+      message: 'Company retrieved',
+      data: {
+        id: 1,
+        name: 'Tech Corp',
+        slug: 'tech-corp',
+        verificationStatus: 'VERIFIED',
+      },
+    });
+  }),
   http.get('/api/v1/recruiters/jobs', () => {
     return HttpResponse.json({
       success: true,
@@ -159,6 +171,31 @@ describe('Recruiter Job Management Lifecycle', () => {
     await waitFor(() => {
       expect(screen.getByText(/Job archived successfully/i)).toBeInTheDocument();
       expect(screen.getByText('ARCHIVED')).toBeInTheDocument();
+    });
+  });
+
+  it('displays organization registration onboarding card when recruiter has no company', async () => {
+    server.use(
+      http.get('/api/v1/companies/my-company', () => {
+        return new HttpResponse(null, { status: 404 });
+      })
+    );
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <RecruiterJobsPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Organization Registration Required')).toBeInTheDocument();
+      expect(screen.getByText('Register Company Profile')).toBeInTheDocument();
     });
   });
 });

@@ -49,7 +49,7 @@ export function Navbar() {
 
           {/* Navigation links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            {user?.role !== 'ROLE_RECRUITER' && (
+            {(!user || user.role === 'ROLE_STUDENT') && (
               <>
                 <Link to="/jobs" className="hover:text-indigo-600 transition-colors">
                   Find Jobs

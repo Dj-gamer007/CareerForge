@@ -70,7 +70,7 @@ public class CompanyServiceImpl implements CompanyService {
                 .industry(request.getIndustry().trim())
                 .companySize(request.getCompanySize())
                 .location(request.getLocation())
-                .verificationStatus(CompanyVerificationStatus.VERIFIED)
+                .verificationStatus(CompanyVerificationStatus.PENDING)
                 .build();
 
         Company savedCompany = companyRepository.save(company);

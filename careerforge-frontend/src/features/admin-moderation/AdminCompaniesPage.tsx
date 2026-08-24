@@ -45,12 +45,15 @@ export function AdminCompaniesPage() {
         search: searchInput || undefined,
         status: statusFilter ? (statusFilter as CompanyVerificationStatus) : undefined,
       }),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 2500,
   });
 
   const { data: companyDetail, isLoading: isDetailLoading } = useQuery({
     queryKey: queryKeys.admin.companyDetail(selectedCompany?.id || 0),
     queryFn: () => adminService.getCompanyById(selectedCompany!.id),
     enabled: isDetailModalOpen && !!selectedCompany?.id,
+    refetchInterval: isDetailModalOpen && !!selectedCompany?.id ? 2500 : false,
   });
 
   const verifyMutation = useMutation({
@@ -83,7 +86,7 @@ export function AdminCompaniesPage() {
     setIsDetailModalOpen(true);
   };
 
-  if (isLoading) return <LoadingSpinner text="Loading company verification queue..." />;
+  if (isLoading && !companiesData) return <LoadingSpinner text="Loading company verification queue..." />;
   if (isError) {
     return (
       <ErrorState

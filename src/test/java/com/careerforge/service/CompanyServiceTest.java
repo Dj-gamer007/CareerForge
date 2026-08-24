@@ -77,7 +77,7 @@ class CompanyServiceTest {
     }
 
     @Test
-    @DisplayName("Should create company and assign recruiter as admin")
+    @DisplayName("Should create company with PENDING status and assign recruiter as admin")
     void testCreateCompany_Success() {
         CompanyCreateRequest request = CompanyCreateRequest.builder()
                 .name("Acme Corporation")
@@ -100,11 +100,12 @@ class CompanyServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getName()).isEqualTo("Acme Corporation");
         assertThat(response.getSlug()).isNotNull();
-        assertThat(response.getVerificationStatus()).isEqualTo(CompanyVerificationStatus.VERIFIED);
+        assertThat(response.getVerificationStatus()).isEqualTo(CompanyVerificationStatus.PENDING);
         assertThat(recruiterProfile.isCompanyAdmin()).isTrue();
         assertThat(recruiterProfile.getCompany()).isNotNull();
         assertThat(recruiterProfile.getCompany().getId()).isEqualTo(100L);
         assertThat(recruiterProfile.getCompany().getName()).isEqualTo("Acme Corporation");
+        assertThat(recruiterProfile.getCompany().getVerificationStatus()).isEqualTo(CompanyVerificationStatus.PENDING);
         verify(recruiterProfileRepository).save(recruiterProfile);
     }
 

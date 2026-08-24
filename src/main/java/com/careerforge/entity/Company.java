@@ -6,7 +6,7 @@ import lombok.*;
 
 /**
  * Represents a registered hiring company on CareerForge.
- * In Phase 3, verificationStatus defaults to VERIFIED for recruiter operational autonomy.
+ * Newly registered companies default to PENDING awaiting administrator verification.
  */
 @Entity
 @Table(name = "companies", indexes = {
@@ -53,5 +53,5 @@ public class Company extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 20)
     @Builder.Default
-    private CompanyVerificationStatus verificationStatus = CompanyVerificationStatus.VERIFIED;
+    private CompanyVerificationStatus verificationStatus = CompanyVerificationStatus.PENDING;
 }

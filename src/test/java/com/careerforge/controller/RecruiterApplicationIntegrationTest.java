@@ -1,6 +1,7 @@
 package com.careerforge.controller;
 
 import com.careerforge.dto.request.*;
+import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
 import com.careerforge.entity.Resume;
 import com.careerforge.entity.Skill;
@@ -11,6 +12,7 @@ import com.careerforge.entity.enums.ExperienceLevel;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.Role;
 import com.careerforge.entity.enums.WorkMode;
+import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.ResumeRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.StudentProfileRepository;
@@ -85,6 +87,9 @@ class RecruiterApplicationIntegrationTest {
     private CompanyService companyService;
 
     @Autowired
+    private CompanyRepository companyRepository;
+
+    @Autowired
     private JobService jobService;
 
     @Autowired
@@ -132,9 +137,18 @@ class RecruiterApplicationIntegrationTest {
         recruiterTokenB = "Bearer " + jwtTokenProvider.generateAccessToken(UserPrincipal.create(recruiterB));
         studentToken = "Bearer " + jwtTokenProvider.generateAccessToken(UserPrincipal.create(student));
 
-        // Create companies
-        companyService.createCompany(recruiterA.getId(), CompanyCreateRequest.builder().name("Company Alpha").industry("Tech").build());
-        companyService.createCompany(recruiterB.getId(), CompanyCreateRequest.builder().name("Company Beta").industry("Finance").build());
+        // Create companies and verify for ATS tests
+        CompanyResponse compA = companyService.createCompany(recruiterA.getId(), CompanyCreateRequest.builder().name("Company Alpha").industry("Tech").build());
+        companyRepository.findById(compA.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
+
+        CompanyResponse compB = companyService.createCompany(recruiterB.getId(), CompanyCreateRequest.builder().name("Company Beta").industry("Finance").build());
+        companyRepository.findById(compB.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         // Setup student profile + resume
         studentProfileService.updateProfile(student.getId(), StudentProfileRequest.builder()

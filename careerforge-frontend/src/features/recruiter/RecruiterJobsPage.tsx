@@ -27,12 +27,21 @@ import {
 } from 'lucide-react';
 import { JobStatus } from '@/types/job.types';
 
+import { recruiterService } from '@/services/recruiter.service';
+import { Building2 } from 'lucide-react';
+
 export function RecruiterJobsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<JobStatus | ''>('');
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const { data: company, isLoading: isCompLoading } = useQuery({
+    queryKey: queryKeys.recruiter.company,
+    queryFn: () => recruiterService.getMyCompany(),
+    retry: false,
+  });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.recruiter.jobs({ page, size: 10, status: statusFilter || undefined }),
@@ -42,6 +51,8 @@ export function RecruiterJobsPage() {
         size: 10,
         status: statusFilter ? (statusFilter as JobStatus) : undefined,
       }),
+    enabled: !!company?.id,
+    retry: false,
   });
 
   const invalidateAllJobQueries = () => {
@@ -152,7 +163,41 @@ export function RecruiterJobsPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading company job postings..." />;
+  if (isCompLoading || (isLoading && !!company?.id)) return <LoadingSpinner text="Loading company job postings..." />;
+
+  if (!company) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Job Postings Management"
+          description="Create, publish, pause, and track hiring stages across all open roles"
+        />
+
+        <Card>
+          <CardContent className="p-8 text-center space-y-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Organization Registration Required</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                You must register your company profile before creating, publishing, and managing job postings.
+              </p>
+            </div>
+            <div>
+              <Link to="/recruiter/company">
+                <Button size="sm">
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Register Company Profile
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (isError) {
     return (
       <ErrorState

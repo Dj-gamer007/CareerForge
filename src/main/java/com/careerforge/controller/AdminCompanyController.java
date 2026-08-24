@@ -31,20 +31,22 @@ public class AdminCompanyController {
     @GetMapping
     public ResponseEntity<ApiResponse<Page<AdminCompanySummaryResponse>>> getCompanies(
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) CompanyVerificationStatus verificationStatus,
+            @RequestParam(name = "status", required = false) CompanyVerificationStatus status,
+            @RequestParam(name = "verificationStatus", required = false) CompanyVerificationStatus verificationStatus,
             @RequestParam(required = false) String industry,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDirection
     ) {
+        CompanyVerificationStatus targetStatus = status != null ? status : verificationStatus;
         Sort sort = sortDirection.equalsIgnoreCase("asc")
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<AdminCompanySummaryResponse> companies = adminModerationService.getCompanies(
-                search, verificationStatus, industry, pageable
+                search, targetStatus, industry, pageable
         );
         return ResponseEntity.ok(ApiResponse.success("Companies retrieved successfully", companies));
     }

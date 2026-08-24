@@ -45,12 +45,15 @@ export function AdminJobsPage() {
         search: searchInput || undefined,
         status: statusFilter ? (statusFilter as JobStatus) : undefined,
       }),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 2500,
   });
 
   const { data: jobDetail, isLoading: isDetailLoading } = useQuery({
     queryKey: queryKeys.admin.jobDetail(selectedJob?.id || 0),
     queryFn: () => adminService.getJobById(selectedJob!.id),
     enabled: isDetailModalOpen && !!selectedJob?.id,
+    refetchInterval: isDetailModalOpen && !!selectedJob?.id ? 2500 : false,
   });
 
   const moderateMutation = useMutation({
@@ -83,7 +86,7 @@ export function AdminJobsPage() {
     setIsDetailModalOpen(true);
   };
 
-  if (isLoading) return <LoadingSpinner text="Loading platform job directory..." />;
+  if (isLoading && !jobsData) return <LoadingSpinner text="Loading platform job directory..." />;
   if (isError) {
     return (
       <ErrorState

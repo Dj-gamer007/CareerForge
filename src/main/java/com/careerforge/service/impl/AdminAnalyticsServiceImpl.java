@@ -91,34 +91,67 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
     ) {
         validateDateRange(dateFrom, dateTo);
 
-        List<MetricCountDto<ApplicationStatus>> statusCounts =
-                applicationRepository.countApplicationsGroupedByStatus(jobId, companyId, dateFrom, dateTo);
-
-        Map<ApplicationStatus, Long> map = new EnumMap<>(ApplicationStatus.class);
-        for (ApplicationStatus status : ApplicationStatus.values()) {
-            map.put(status, 0L);
-        }
-        for (MetricCountDto<ApplicationStatus> dto : statusCounts) {
-            if (dto.getKey() != null) {
-                map.put(dto.getKey(), dto.getCount());
+        List<com.careerforge.entity.Application> apps = applicationRepository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (jobId != null) {
+                predicates.add(cb.equal(root.get("job").get("id"), jobId));
             }
+            if (companyId != null) {
+                predicates.add(cb.equal(root.get("job").get("company").get("id"), companyId));
+            }
+            if (dateFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), dateFrom));
+            }
+            if (dateTo != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), dateTo));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        });
+
+        long totalApplications = apps.size();
+        long appliedCount = totalApplications;
+
+        long underReviewCount = 0;
+        long shortlistedCount = 0;
+        long interviewScheduledCount = 0;
+        long acceptedCount = 0;
+        long rejectedCount = 0;
+        long withdrawnCount = 0;
+
+        for (com.careerforge.entity.Application a : apps) {
+            boolean isAccepted = a.getStatus() == ApplicationStatus.ACCEPTED;
+            boolean isRejected = a.getStatus() == ApplicationStatus.REJECTED;
+            boolean isWithdrawn = a.getStatus() == ApplicationStatus.WITHDRAWN || a.getWithdrawnAt() != null;
+
+            boolean reachedInterview = isAccepted
+                    || a.getStatus() == ApplicationStatus.INTERVIEW_SCHEDULED
+                    || a.getInterviewScheduledAt() != null;
+
+            boolean reachedShortlist = reachedInterview
+                    || a.getStatus() == ApplicationStatus.SHORTLISTED
+                    || a.getShortlistedAt() != null;
+
+            boolean reachedReview = reachedShortlist
+                    || a.getStatus() == ApplicationStatus.UNDER_REVIEW
+                    || a.getReviewedAt() != null;
+
+            if (reachedReview) underReviewCount++;
+            if (reachedShortlist) shortlistedCount++;
+            if (reachedInterview) interviewScheduledCount++;
+            if (isAccepted) acceptedCount++;
+            if (isRejected) rejectedCount++;
+            if (isWithdrawn) withdrawnCount++;
         }
 
-        long appliedCount = map.get(ApplicationStatus.APPLIED);
-        long underReviewCount = map.get(ApplicationStatus.UNDER_REVIEW);
-        long shortlistedCount = map.get(ApplicationStatus.SHORTLISTED);
-        long interviewScheduledCount = map.get(ApplicationStatus.INTERVIEW_SCHEDULED);
-        long acceptedCount = map.get(ApplicationStatus.ACCEPTED);
-        long rejectedCount = map.get(ApplicationStatus.REJECTED);
-        long withdrawnCount = map.get(ApplicationStatus.WITHDRAWN);
-
-        long totalApplications = appliedCount + underReviewCount + shortlistedCount +
-                interviewScheduledCount + acceptedCount + rejectedCount + withdrawnCount;
-
-        long activeInPipeline = appliedCount + underReviewCount + shortlistedCount + interviewScheduledCount;
+        long activeInPipeline = apps.stream()
+                .filter(a -> a.getStatus() == ApplicationStatus.APPLIED
+                        || a.getStatus() == ApplicationStatus.UNDER_REVIEW
+                        || a.getStatus() == ApplicationStatus.SHORTLISTED
+                        || a.getStatus() == ApplicationStatus.INTERVIEW_SCHEDULED)
+                .count();
 
         double activeInPipelinePercentage = calculatePercentage(activeInPipeline, totalApplications);
-        double interviewRatePercentage = calculatePercentage(interviewScheduledCount + acceptedCount, totalApplications);
+        double interviewRatePercentage = calculatePercentage(interviewScheduledCount, totalApplications);
         double acceptanceRatePercentage = calculatePercentage(acceptedCount, totalApplications);
         double rejectionRatePercentage = calculatePercentage(rejectedCount, totalApplications);
         double withdrawalRatePercentage = calculatePercentage(withdrawnCount, totalApplications);

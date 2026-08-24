@@ -1,7 +1,6 @@
 import { Role } from './auth.types';
 import { CompanyVerificationStatus } from './company.types';
 import { JobStatus, WorkMode, JobType, ExperienceLevel, JobSkillResponse } from './job.types';
-import { StudentProfileResponse } from './student.types';
 import { RecruiterProfileResponse } from './company.types';
 
 export interface AdminUserSummaryResponse {
@@ -15,6 +14,28 @@ export interface AdminUserSummaryResponse {
   updatedAt: string;
 }
 
+export interface AdminStudentProfileSummary {
+  id: number;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  location?: string;
+  bio?: string;
+  educationSummary?: string;
+  githubUrl?: string;
+  linkedinUrl?: string;
+  portfolioUrl?: string;
+  profileCompletionPercentage: number;
+  totalSkills: number;
+  totalEducations: number;
+  totalProjects: number;
+  totalCertifications: number;
+  totalResumes: number;
+  activeResumeId?: number;
+  skills?: string[];
+  resumes?: Array<{ id: number; originalFileName: string; isActive?: boolean }>;
+}
+
 export interface AdminUserDetailResponse {
   id: number;
   email: string;
@@ -22,7 +43,7 @@ export interface AdminUserDetailResponse {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
-  studentProfile?: StudentProfileResponse;
+  studentProfile?: AdminStudentProfileSummary;
   recruiterProfile?: RecruiterProfileResponse;
 }
 

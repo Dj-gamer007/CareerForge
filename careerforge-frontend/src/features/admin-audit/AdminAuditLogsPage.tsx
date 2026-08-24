@@ -48,12 +48,15 @@ export function AdminAuditLogsPage() {
         dateFrom: dateFrom ? `${dateFrom}T00:00:00` : undefined,
         dateTo: dateTo ? `${dateTo}T23:59:59` : undefined,
       }),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 2500,
   });
 
   const { data: logDetail, isLoading: isDetailLoading } = useQuery({
     queryKey: queryKeys.admin.auditLogDetail(selectedLog?.id || 0),
     queryFn: () => adminService.getAuditLogById(selectedLog!.id),
     enabled: isDetailModalOpen && !!selectedLog?.id,
+    refetchInterval: isDetailModalOpen && !!selectedLog?.id ? 2500 : false,
   });
 
   const openDetailModal = (log: AuditLogSummaryResponse) => {
@@ -61,7 +64,7 @@ export function AdminAuditLogsPage() {
     setIsDetailModalOpen(true);
   };
 
-  if (isLoading) return <LoadingSpinner text="Loading immutable security audit trail..." />;
+  if (isLoading && !auditData) return <LoadingSpinner text="Loading immutable security audit trail..." />;
   if (isError) {
     return (
       <ErrorState

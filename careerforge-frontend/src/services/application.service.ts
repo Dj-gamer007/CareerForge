@@ -6,6 +6,9 @@ import {
   RecruiterApplicationResponse,
   RecruiterApplicationDetailResponse,
   ApplicationStatus,
+  ApplicationStatusHistoryResponse,
+  ApplicationTab,
+  ApplicationTabCountsResponse,
 } from '@/types/application.types';
 import { SavedJobResponse } from '@/types/job.types';
 
@@ -22,12 +25,18 @@ export const applicationService = {
 
   async getStudentApplications(params?: {
     status?: ApplicationStatus;
+    tab?: ApplicationTab;
     page?: number;
     size?: number;
   }): Promise<SpringPage<StudentApplicationResponse>> {
     const res = await apiClient.get<ApiResponse<SpringPage<StudentApplicationResponse>>>('/students/applications', {
       params,
     });
+    return res.data.data;
+  },
+
+  async getStudentApplicationCounts(): Promise<ApplicationTabCountsResponse> {
+    const res = await apiClient.get<ApiResponse<ApplicationTabCountsResponse>>('/students/applications/counts');
     return res.data.data;
   },
 
@@ -113,5 +122,19 @@ export const applicationService = {
       responseType: 'blob',
     });
     return res.data;
+  },
+
+  async getStudentApplicationHistory(id: number): Promise<ApplicationStatusHistoryResponse[]> {
+    const res = await apiClient.get<ApiResponse<ApplicationStatusHistoryResponse[]>>(
+      `/students/applications/${id}/history`
+    );
+    return res.data.data;
+  },
+
+  async getRecruiterApplicationHistory(id: number): Promise<ApplicationStatusHistoryResponse[]> {
+    const res = await apiClient.get<ApiResponse<ApplicationStatusHistoryResponse[]>>(
+      `/recruiters/applications/${id}/history`
+    );
+    return res.data.data;
   },
 };

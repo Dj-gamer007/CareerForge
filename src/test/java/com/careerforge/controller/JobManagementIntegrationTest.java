@@ -4,10 +4,12 @@ import com.careerforge.dto.request.CompanyCreateRequest;
 import com.careerforge.dto.request.JobCreateRequest;
 import com.careerforge.dto.request.JobSkillItemRequest;
 import com.careerforge.dto.request.JobUpdateRequest;
+import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
 import com.careerforge.entity.Skill;
 import com.careerforge.entity.User;
 import com.careerforge.entity.enums.*;
+import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.UserRepository;
 import com.careerforge.security.JwtTokenProvider;
@@ -62,6 +64,9 @@ class JobManagementIntegrationTest {
     @Autowired
     private CompanyService companyService;
 
+    @Autowired
+    private CompanyRepository companyRepository;
+
     private String recruiterToken;
     private String otherRecruiterToken;
     private User recruiterUser;
@@ -89,17 +94,25 @@ class JobManagementIntegrationTest {
         javaSkill = skillRepository.findByNameIgnoreCase("Java")
                 .orElseGet(() -> skillRepository.save(Skill.builder().name("Java").category("Backend").build()));
 
-        // Create company for first recruiter
-        companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
+        // Create company for first recruiter and verify for job publishing test
+        CompanyResponse comp1 = companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
                 .name("TechCorp Solutions")
                 .industry("Software")
                 .build());
+        companyRepository.findById(comp1.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
-        // Create company for second recruiter
-        companyService.createCompany(otherRecruiterUser.getId(), CompanyCreateRequest.builder()
+        // Create company for second recruiter and verify for job publishing test
+        CompanyResponse comp2 = companyService.createCompany(otherRecruiterUser.getId(), CompanyCreateRequest.builder()
                 .name("OtherCorp Media")
                 .industry("Media")
                 .build());
+        companyRepository.findById(comp2.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         recruiterToken = "Bearer " + jwtTokenProvider.generateAccessToken(UserPrincipal.create(recruiterUser));
         otherRecruiterToken = "Bearer " + jwtTokenProvider.generateAccessToken(UserPrincipal.create(otherRecruiterUser));

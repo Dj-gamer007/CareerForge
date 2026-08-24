@@ -53,12 +53,15 @@ export function AdminUsersPage() {
         role: roleFilter ? (roleFilter as Role) : undefined,
         enabled: enabledFilter !== '' ? enabledFilter === 'true' : undefined,
       }),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 2500,
   });
 
   const { data: userDetail, isLoading: isDetailLoading } = useQuery({
     queryKey: queryKeys.admin.userDetail(selectedUser?.id || 0),
     queryFn: () => adminService.getUserById(selectedUser!.id),
     enabled: isDetailModalOpen && !!selectedUser?.id,
+    refetchInterval: isDetailModalOpen && !!selectedUser?.id ? 2500 : false,
   });
 
   const updateStatusMutation = useMutation({
@@ -91,7 +94,7 @@ export function AdminUsersPage() {
     setIsDetailModalOpen(true);
   };
 
-  if (isLoading) return <LoadingSpinner text="Loading user directory..." />;
+  if (isLoading && !usersData) return <LoadingSpinner text="Loading user directory..." />;
   if (isError) {
     return (
       <ErrorState
@@ -285,10 +288,10 @@ export function AdminUsersPage() {
                     <span className="font-bold">Completion:</span> {userDetail.studentProfile.profileCompletionPercentage}%
                   </p>
                   <p>
-                    <span className="font-bold">Skills:</span> {userDetail.studentProfile.skills?.length || 0} verified skills
+                    <span className="font-bold">Skills:</span> {userDetail.studentProfile.totalSkills ?? userDetail.studentProfile.skills?.length ?? 0} verified skills
                   </p>
                   <p>
-                    <span className="font-bold">Resumes:</span> {userDetail.studentProfile.resumes?.length || 0} uploaded
+                    <span className="font-bold">Resumes:</span> {userDetail.studentProfile.totalResumes ?? userDetail.studentProfile.resumes?.length ?? 0} uploaded
                   </p>
                 </div>
               </div>

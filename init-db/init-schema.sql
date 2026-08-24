@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS `companies` (
     `industry` VARCHAR(100) NOT NULL,
     `company_size` VARCHAR(50) NULL,
     `location` VARCHAR(150) NULL,
-    `verification_status` ENUM('PENDING','VERIFIED','REJECTED') NOT NULL DEFAULT 'VERIFIED',
+    `verification_status` ENUM('PENDING','VERIFIED','REJECTED') NOT NULL DEFAULT 'PENDING',
     `created_at` DATETIME(6) NOT NULL,
     `updated_at` DATETIME(6) NOT NULL,
     INDEX `idx_company_name` (`name`),
@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS `applications` (
     `match_score_at_application` DECIMAL(5, 2) NOT NULL,
     `recruiter_notes` TEXT NULL,
     `interview_scheduled_at` DATETIME(6) NULL,
+    `shortlisted_at` DATETIME(6) NULL,
     `reviewed_at` DATETIME(6) NULL,
     `withdrawn_at` DATETIME(6) NULL,
     `created_at` DATETIME(6) NOT NULL,
@@ -259,7 +260,22 @@ CREATE TABLE IF NOT EXISTS `applications` (
     INDEX `idx_app_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 15. Saved Jobs Table
+-- 15. Application Status History Table
+CREATE TABLE IF NOT EXISTS `application_status_history` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `application_id` BIGINT NOT NULL,
+    `from_status` ENUM('APPLIED', 'UNDER_REVIEW', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'ACCEPTED', 'REJECTED', 'WITHDRAWN') NULL,
+    `to_status` ENUM('APPLIED', 'UNDER_REVIEW', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'ACCEPTED', 'REJECTED', 'WITHDRAWN') NOT NULL,
+    `changed_at` DATETIME(6) NOT NULL,
+    `changed_by` VARCHAR(50) NOT NULL,
+    `reason` TEXT NULL,
+    `notes` TEXT NULL,
+    CONSTRAINT `fk_app_status_history_application` FOREIGN KEY (`application_id`) REFERENCES `applications` (`id`) ON DELETE CASCADE,
+    INDEX `idx_ash_application_id` (`application_id`),
+    INDEX `idx_ash_app_id_changed_at` (`application_id`, `changed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 16. Saved Jobs Table
 CREATE TABLE IF NOT EXISTS `saved_jobs` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `student_profile_id` BIGINT NOT NULL,

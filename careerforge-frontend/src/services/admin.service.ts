@@ -51,11 +51,19 @@ export const adminService = {
   async getCompanies(params?: {
     search?: string;
     status?: CompanyVerificationStatus;
+    verificationStatus?: CompanyVerificationStatus;
     page?: number;
     size?: number;
     sort?: string;
   }): Promise<SpringPage<AdminCompanySummaryResponse>> {
-    const res = await apiClient.get<ApiResponse<SpringPage<AdminCompanySummaryResponse>>>('/admin/companies', { params });
+    const queryParams = params
+      ? {
+          ...params,
+          verificationStatus: params.verificationStatus || params.status,
+          status: params.status || params.verificationStatus,
+        }
+      : undefined;
+    const res = await apiClient.get<ApiResponse<SpringPage<AdminCompanySummaryResponse>>>('/admin/companies', { params: queryParams });
     return res.data.data;
   },
 

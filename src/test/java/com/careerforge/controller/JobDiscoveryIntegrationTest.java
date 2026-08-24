@@ -3,10 +3,12 @@ package com.careerforge.controller;
 import com.careerforge.dto.request.CompanyCreateRequest;
 import com.careerforge.dto.request.JobCreateRequest;
 import com.careerforge.dto.request.JobSkillItemRequest;
+import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
 import com.careerforge.entity.Skill;
 import com.careerforge.entity.User;
 import com.careerforge.entity.enums.*;
+import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.UserRepository;
 import com.careerforge.security.JwtTokenProvider;
@@ -57,6 +59,9 @@ class JobDiscoveryIntegrationTest {
     private CompanyService companyService;
 
     @Autowired
+    private CompanyRepository companyRepository;
+
+    @Autowired
     private JobService jobService;
 
     private Skill javaSkill;
@@ -80,12 +85,16 @@ class JobDiscoveryIntegrationTest {
         reactSkill = skillRepository.findByNameIgnoreCase("React")
                 .orElseGet(() -> skillRepository.save(Skill.builder().name("React").category("Frontend").build()));
 
-        // Create company
-        companyService.createCompany(recruiter.getId(), CompanyCreateRequest.builder()
+        // Create company and verify for public discovery tests
+        CompanyResponse comp = companyService.createCompany(recruiter.getId(), CompanyCreateRequest.builder()
                 .name("Global Systems Inc")
                 .industry("Enterprise Software")
                 .location("Bengaluru, India")
                 .build());
+        companyRepository.findById(comp.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         // Create and publish a job
         JobCreateRequest jobReq1 = JobCreateRequest.builder()

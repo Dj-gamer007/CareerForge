@@ -5,6 +5,7 @@ import com.careerforge.dto.request.CompanyCreateRequest;
 import com.careerforge.dto.request.JobCreateRequest;
 import com.careerforge.dto.request.JobSkillItemRequest;
 import com.careerforge.dto.request.StudentProfileRequest;
+import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
 import com.careerforge.entity.Resume;
 import com.careerforge.entity.Skill;
@@ -14,6 +15,8 @@ import com.careerforge.entity.enums.ExperienceLevel;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.Role;
 import com.careerforge.entity.enums.WorkMode;
+import com.careerforge.repository.ApplicationStatusHistoryRepository;
+import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.ResumeRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.StudentProfileRepository;
@@ -70,6 +73,9 @@ class StudentApplicationIntegrationTest {
     private ResumeRepository resumeRepository;
 
     @Autowired
+    private ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -80,6 +86,9 @@ class StudentApplicationIntegrationTest {
 
     @Autowired
     private CompanyService companyService;
+
+    @Autowired
+    private CompanyRepository companyRepository;
 
     @Autowired
     private JobService jobService;
@@ -140,10 +149,14 @@ class StudentApplicationIntegrationTest {
                 .build());
 
         // Create recruiter company and published job
-        companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
+        CompanyResponse comp = companyService.createCompany(recruiterUser.getId(), CompanyCreateRequest.builder()
                 .name("NextGen Software Corp")
                 .industry("Cloud Computing")
                 .build());
+        companyRepository.findById(comp.getId()).ifPresent(c -> {
+            c.setVerificationStatus(com.careerforge.entity.enums.CompanyVerificationStatus.VERIFIED);
+            companyRepository.save(c);
+        });
 
         Skill javaSkill = skillRepository.findByNameIgnoreCase("Java")
                 .orElseGet(() -> skillRepository.save(Skill.builder().name("Java").category("Backend").build()));
@@ -461,5 +474,233 @@ class StudentApplicationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.data.interviewScheduledAt").exists());
+    }
+
+    @Test
+    @DisplayName("Application submission creates initial history event (null -> APPLIED)")
+    void testApplicationCreationGeneratesInitialHistory() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Initial History Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].fromStatus").doesNotExist())
+                .andExpect(jsonPath("$.data[0].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.data[0].changedBy").value("STUDENT"));
+    }
+
+    @Test
+    @DisplayName("Full lifecycle records all 5 chronological history events")
+    void testFullLifecycleHistoryEventsChronological() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Full Lifecycle History").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // 1 -> 2: UNDER_REVIEW
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+
+        // 2 -> 3: SHORTLISTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+
+        // 3 -> 4: INTERVIEW_SCHEDULED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+
+        // 4 -> 5: ACCEPTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACCEPTED\"}")).andExpect(status().isOk());
+
+        // Verify history endpoint returns all 5 events
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(5)))
+                .andExpect(jsonPath("$.data[0].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.data[1].fromStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.data[1].toStatus").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data[2].fromStatus").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data[2].toStatus").value("SHORTLISTED"))
+                .andExpect(jsonPath("$.data[3].fromStatus").value("SHORTLISTED"))
+                .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data[4].fromStatus").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data[4].toStatus").value("ACCEPTED"));
+
+        // Verify Recruiter can also fetch history
+        mockMvc.perform(get("/api/v1/recruiters/applications/" + appId + "/history").header("Authorization", recruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(5)));
+    }
+
+    @Test
+    @DisplayName("Security: Student cannot access another student's application history")
+    void testStudentCannotAccessOtherStudentHistory() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Security Check").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Student 2 attempting to view Student 1's application history must fail with 404
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken2))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Failed transition does not create history event")
+    void testFailedTransitionDoesNotCreateHistoryEvent() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Failed Transition").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // APPLIED -> SHORTLISTED fails
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}"))
+                .andExpect(status().isBadRequest());
+
+        // History must still contain ONLY the 1 initial APPLIED event
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].toStatus").value("APPLIED"));
+    }
+
+    @Test
+    @DisplayName("Milestone Tabs: Applied, Shortlisted, and Interview tabs maintain persistent milestone membership")
+    void testMilestoneTabsAndPersistence() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Milestone Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // 1. Initial State: APPLIED
+        // ALL: 1, APPLIED: 1, SHORTLISTED: 0, INTERVIEW: 0
+        mockMvc.perform(get("/api/v1/students/applications?tab=ALL").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/students/applications?tab=APPLIED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/students/applications?tab=SHORTLISTED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        mockMvc.perform(get("/api/v1/students/applications?tab=INTERVIEW").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+
+        // 2. Move to UNDER_REVIEW -> Applied tab must STILL contain it!
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/students/applications?tab=APPLIED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("UNDER_REVIEW"));
+        mockMvc.perform(get("/api/v1/students/applications?tab=SHORTLISTED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+
+        // 3. Move to SHORTLISTED -> Appears in Shortlisted AND remains in Applied
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/students/applications?tab=APPLIED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/students/applications?tab=SHORTLISTED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("SHORTLISTED"));
+        mockMvc.perform(get("/api/v1/students/applications?tab=INTERVIEW").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+
+        // 4. Move to INTERVIEW_SCHEDULED -> Appears in Interview AND remains in Shortlisted + Applied
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/students/applications?tab=APPLIED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/students/applications?tab=SHORTLISTED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/students/applications?tab=INTERVIEW").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("INTERVIEW_SCHEDULED"));
+
+        // 5. Move to ACCEPTED -> Remains in APPLIED and SHORTLISTED; INTERVIEW tab only shows current interviews
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACCEPTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/students/applications?tab=APPLIED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("ACCEPTED"));
+        mockMvc.perform(get("/api/v1/students/applications?tab=SHORTLISTED").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("ACCEPTED"));
+        mockMvc.perform(get("/api/v1/students/applications?tab=INTERVIEW").header("Authorization", studentToken1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+
+        // Verify Tab Counts endpoint (interview count is 0 because status is ACCEPTED, not INTERVIEW_SCHEDULED)
+        mockMvc.perform(get("/api/v1/students/applications/counts").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.all").value(1))
+                .andExpect(jsonPath("$.data.applied").value(1))
+                .andExpect(jsonPath("$.data.shortlisted").value(1))
+                .andExpect(jsonPath("$.data.interview").value(0));
+    }
+
+    @Test
+    @DisplayName("Recruiter receives notification when candidate submits an application for their job")
+    void testRecruiterReceivesNotificationOnCandidateApplication() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Notification Test").build();
+        mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated());
+
+        // Recruiter checks notifications
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", recruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$.data.content[0].title").value("New application received"))
+                .andExpect(jsonPath("$.data.content[0].message").value(containsString("applied for")));
+
+        // Verify notification unread count for recruiter
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", recruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unreadCount", greaterThanOrEqualTo(1)));
+
+        // Verify student2 does NOT receive this recruiter notification
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", studentToken2))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Legacy History Reconstruction: Reconstructs timeline when 0 history rows exist")
+    void testLegacyApplicationHistoryReconstruction() throws Exception {
+        ApplicationSubmitRequest req = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Legacy Reconstruction Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Advance to ACCEPTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-09-01T10:00:00\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACCEPTED\"}")).andExpect(status().isOk());
+
+        // Simulate legacy record by deleting history rows
+        applicationStatusHistoryRepository.deleteAll();
+
+        // Fetching history should now trigger safe fallback reconstruction instead of empty list
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(5)))
+                .andExpect(jsonPath("$.data[0].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.data[1].toStatus").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data[2].toStatus").value("SHORTLISTED"))
+                .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data[4].toStatus").value("ACCEPTED"));
     }
 }

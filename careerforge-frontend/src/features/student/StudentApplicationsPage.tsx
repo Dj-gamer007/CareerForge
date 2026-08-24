@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { applicationService } from '@/services/application.service';
-import { queryKeys } from '@/lib/queryClient';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,23 +11,26 @@ import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { formatDate, formatDateTime } from '@/lib/utils';
-import { FileText, Building2, Calendar, Ban } from 'lucide-react';
+import { FileText, Building2, Calendar, Ban, History } from 'lucide-react';
 import { ApplicationStatus } from '@/types/application.types';
+import { ApplicationHistoryModal } from './ApplicationHistoryModal';
 
 export function StudentApplicationsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | ''>('');
+  const [selectedHistoryApp, setSelectedHistoryApp] = useState<{ id: number; jobTitle: string; companyName: string } | null>(null);
 
+  // Applications list query with real-time auto-polling
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: queryKeys.student.applications({ page, size: 10, status: statusFilter || undefined }),
+    queryKey: ['student', 'applications', { page, size: 10, status: statusFilter || undefined }],
     queryFn: () =>
       applicationService.getStudentApplications({
         page,
         size: 10,
         status: statusFilter ? (statusFilter as ApplicationStatus) : undefined,
       }),
-    refetchInterval: 3000,
+    refetchInterval: 2000,
   });
 
   const withdrawMutation = useMutation({
@@ -39,7 +41,7 @@ export function StudentApplicationsPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading your application tracker..." />;
+  if (isLoading && !data) return <LoadingSpinner text="Loading your application tracker..." />;
   if (isError) {
     return (
       <ErrorState
@@ -56,7 +58,7 @@ export function StudentApplicationsPage() {
         title="Application Pipeline & Tracker"
         description="Monitor status transitions, interview dates, and match snapshots for your submitted applications"
         actions={
-          <div className="w-48">
+          <div className="w-full sm:w-56">
             <Select
               options={[
                 { label: 'All Statuses', value: '' },
@@ -121,12 +123,23 @@ export function StudentApplicationsPage() {
                       </div>
                     </div>
 
-                    {/* Self-Withdraw Action */}
-                    {(app.status === 'APPLIED' ||
-                      app.status === 'UNDER_REVIEW' ||
-                      app.status === 'SHORTLISTED' ||
-                      app.status === 'INTERVIEW_SCHEDULED') && (
-                      <div className="shrink-0">
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-primary-600 border-primary-200 hover:bg-primary-50"
+                        onClick={() => setSelectedHistoryApp({ id: app.id, jobTitle: app.jobTitle, companyName: app.companyName })}
+                      >
+                        <History className="w-3.5 h-3.5 mr-1" />
+                        View History
+                      </Button>
+
+                      {/* Self-Withdraw Action */}
+                      {(app.status === 'APPLIED' ||
+                        app.status === 'UNDER_REVIEW' ||
+                        app.status === 'SHORTLISTED' ||
+                        app.status === 'INTERVIEW_SCHEDULED') && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -137,8 +150,8 @@ export function StudentApplicationsPage() {
                           <Ban className="w-3.5 h-3.5 mr-1" />
                           Withdraw
                         </Button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -154,6 +167,15 @@ export function StudentApplicationsPage() {
           />
         </div>
       )}
+
+      {/* Timeline Modal */}
+      <ApplicationHistoryModal
+        isOpen={!!selectedHistoryApp}
+        onClose={() => setSelectedHistoryApp(null)}
+        applicationId={selectedHistoryApp?.id ?? null}
+        jobTitle={selectedHistoryApp?.jobTitle}
+        companyName={selectedHistoryApp?.companyName}
+      />
     </div>
   );
 }

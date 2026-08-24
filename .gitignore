@@ -38,4 +38,10 @@ logs/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Frontend dependencies
 careerforge-frontend/node_modules/
+
+
+# Frontend build output
+careerforge-frontend/dist/

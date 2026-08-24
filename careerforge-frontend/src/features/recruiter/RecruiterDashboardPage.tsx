@@ -15,23 +15,89 @@ export function RecruiterDashboardPage() {
   const { data: company, isLoading: isCompLoading } = useQuery({
     queryKey: queryKeys.recruiter.company,
     queryFn: () => recruiterService.getMyCompany(),
+    retry: false,
   });
 
-  const { data: jobsData, isLoading: isJobsLoading, isError, error, refetch } = useQuery({
+  const { data: jobsData, isLoading: isJobsLoading, isError: isJobsError, error: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: queryKeys.recruiter.jobs({ page: 0, size: 5 }),
     queryFn: () => jobService.getRecruiterJobs({ page: 0, size: 5 }),
+    enabled: !!company?.id,
+    retry: false,
   });
 
-  if (isCompLoading || isJobsLoading) {
+  if (isCompLoading || (isJobsLoading && !!company?.id)) {
     return <LoadingSpinner text="Loading recruiter workspace..." />;
   }
 
-  if (isError) {
+  // Recruiter not yet associated with a company
+  if (!company) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title="Employer Recruitment Portal"
+          description="Manage job postings, review algorithmic candidate matches, and track applicants through your hiring stages"
+        />
+
+        <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50">
+          <CardContent className="p-8 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-200">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-slate-900">Welcome to CareerForge Employer Portal</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Your recruiter account is active! Complete your organizational registration to unlock job creation, candidate pipeline tracking, and algorithmic skill match scoring.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-2">
+                <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                  1
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">Register Company</h4>
+                <p className="text-xs text-slate-500">Provide company name, industry, headquarters, and web presence.</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-2 opacity-80">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">
+                  2
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">Verification</h4>
+                <p className="text-xs text-slate-500">Platform administrators verify your organization credentials.</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-2 opacity-80">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">
+                  3
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">Post Jobs & Hire</h4>
+                <p className="text-xs text-slate-500">Publish open positions and evaluate scored student applications.</p>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Link to="/recruiter/company">
+                <Button size="md" className="shadow-sm">
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Register Company Profile
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isJobsError) {
     return (
       <ErrorState
         title="Could not load dashboard"
-        message={(error as any)?.response?.data?.message || 'Failed to load company workspace'}
-        onRetry={() => refetch()}
+        message={(jobsError as any)?.response?.data?.message || 'Failed to load company workspace'}
+        onRetry={() => refetchJobs()}
       />
     );
   }
