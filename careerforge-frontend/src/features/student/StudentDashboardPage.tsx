@@ -21,6 +21,7 @@ export function StudentDashboardPage() {
     data: profile,
     isLoading: isProfileLoading,
     isError: isProfileError,
+    error: profileError,
     refetch: refetchProfile,
   } = useQuery({
     queryKey: queryKeys.student.profile,
@@ -34,6 +35,7 @@ export function StudentDashboardPage() {
     data: skills = [],
     isLoading: isSkillsLoading,
     isError: isSkillsError,
+    error: skillsError,
     refetch: refetchSkills,
   } = useQuery({
     queryKey: ['student', 'skills'],
@@ -47,6 +49,7 @@ export function StudentDashboardPage() {
     data: resumes = [],
     isLoading: isResumesLoading,
     isError: isResumesError,
+    error: resumesError,
     refetch: refetchResumes,
   } = useQuery({
     queryKey: ['student', 'resumes'],
@@ -60,7 +63,7 @@ export function StudentDashboardPage() {
     data: applications,
     isLoading: isAppsLoading,
     isError: isAppsError,
-    error,
+    error: appsError,
     refetch: refetchApplications,
   } = useQuery({
     queryKey: queryKeys.student.applications({ page: 0, size: 5 }),
@@ -69,7 +72,9 @@ export function StudentDashboardPage() {
         page: 0,
         size: 5,
       }),
-    refetchInterval: 3000,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // ------------------------------------------------------------
@@ -93,13 +98,10 @@ export function StudentDashboardPage() {
     isResumesError ||
     isAppsError
   ) {
+    const activeError = profileError || skillsError || resumesError || appsError;
     return (
       <ErrorState
-        title="Could not load dashboard"
-        message={
-          (error as any)?.response?.data?.message ||
-          'Failed to load your student dashboard'
-        }
+        error={activeError}
         onRetry={() => {
           refetchProfile();
           refetchSkills();

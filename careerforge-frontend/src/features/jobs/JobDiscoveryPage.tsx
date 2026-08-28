@@ -76,6 +76,9 @@ export function JobDiscoveryPage() {
     queryKey: queryKeys.publicJobs.list(searchParams as Record<string, unknown>),
     queryFn: () => jobService.searchJobs(searchParams),
     enabled: activeTab === 'search' && hasSearched,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // Query for Current Openings Tab (Loads all active jobs)
@@ -89,6 +92,9 @@ export function JobDiscoveryPage() {
     queryKey: queryKeys.publicJobs.list({ page: currentOpeningsPage, size: 10, tab: 'current' }),
     queryFn: () => jobService.searchJobs({ page: currentOpeningsPage, size: 10 }),
     enabled: activeTab === 'current',
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // Saved Jobs for Candidate Bookmarking
@@ -96,6 +102,8 @@ export function JobDiscoveryPage() {
     queryKey: ['student', 'saved-jobs'],
     queryFn: () => applicationService.getSavedJobs({ size: 100 }),
     enabled: isStudent,
+    refetchInterval: isStudent ? 3000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const savedJobIds = new Set(savedJobsData?.content?.map((s) => s.jobId) || []);
@@ -264,18 +272,21 @@ export function JobDiscoveryPage() {
             {/* Required Skills */}
             {job.skills && job.skills.length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap pt-2">
-                {job.skills.slice(0, 5).map((s) => (
-                  <span
-                    key={s.id}
-                    className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${
-                      s.isRequired
-                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {s.skillName} {s.isRequired ? '*' : ''}
-                  </span>
-                ))}
+                {job.skills.slice(0, 5).map((s) => {
+                  const isRequired = s.required ?? s.isRequired;
+                  return (
+                    <span
+                      key={s.id}
+                      className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${
+                        isRequired
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {s.skillName} {isRequired ? '*' : ''}
+                    </span>
+                  );
+                })}
                 {job.skills.length > 5 && (
                   <span className="text-[10px] text-slate-400 font-medium">
                     +{job.skills.length - 5} more
@@ -526,8 +537,7 @@ export function JobDiscoveryPage() {
             <LoadingSpinner text="Searching opportunities..." />
           ) : isSearchError ? (
             <ErrorState
-              title="Could not complete search"
-              message={(searchError as any)?.response?.data?.message || 'Failed to fetch search results'}
+              error={searchError}
               onRetry={() => refetchSearch()}
             />
           ) : !searchData || searchData.content.length === 0 ? (
@@ -547,11 +557,11 @@ export function JobDiscoveryPage() {
               <div className="grid grid-cols-1 gap-4">{searchData.content.map(renderJobCard)}</div>
 
               <PaginationControls
-                currentPage={searchData.number}
+                currentPage={searchData.page ?? searchData.number ?? 0}
                 totalPages={searchData.totalPages}
                 totalElements={searchData.totalElements}
                 pageSize={searchData.size}
-                onPageChange={(newPage) => setSearchParams((prev) => ({ ...prev, page: newPage }))}
+                onPageChange={(newPage) => setSearchParams((prev) => ({ ...prev, page: Number.isFinite(newPage) ? newPage : 0 }))}
               />
             </div>
           )}
@@ -579,8 +589,7 @@ export function JobDiscoveryPage() {
             <LoadingSpinner text="Loading current job openings..." />
           ) : isCurrentError ? (
             <ErrorState
-              title="Could not load openings"
-              message={(currentError as any)?.response?.data?.message || 'Failed to fetch current openings'}
+              error={currentError}
               onRetry={() => refetchCurrent()}
             />
           ) : !currentOpeningsData || currentOpeningsData.content.length === 0 ? (
@@ -594,11 +603,11 @@ export function JobDiscoveryPage() {
               <div className="grid grid-cols-1 gap-4">{currentOpeningsData.content.map(renderJobCard)}</div>
 
               <PaginationControls
-                currentPage={currentOpeningsData.number}
+                currentPage={currentOpeningsData.page ?? currentOpeningsData.number ?? 0}
                 totalPages={currentOpeningsData.totalPages}
                 totalElements={currentOpeningsData.totalElements}
                 pageSize={currentOpeningsData.size}
-                onPageChange={(newPage) => setCurrentOpeningsPage(newPage)}
+                onPageChange={(newPage) => setCurrentOpeningsPage(Number.isFinite(newPage) ? newPage : 0)}
               />
             </div>
           )}

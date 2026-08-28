@@ -55,8 +55,7 @@ export function CompanyDirectoryPage() {
         <LoadingSpinner text="Loading company directory..." />
       ) : isError ? (
         <ErrorState
-          title="Could not load companies"
-          message={(error as any)?.response?.data?.message || 'Failed to fetch companies'}
+          error={error}
           onRetry={() => refetch()}
         />
       ) : !data || data.content.length === 0 ? (
@@ -125,11 +124,11 @@ export function CompanyDirectoryPage() {
           </div>
 
           <PaginationControls
-            currentPage={data.number}
+            currentPage={data.page ?? data.number ?? 0}
             totalPages={data.totalPages}
             totalElements={data.totalElements}
             pageSize={data.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         </div>
       )}

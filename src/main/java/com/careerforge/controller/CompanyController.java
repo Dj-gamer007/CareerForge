@@ -41,6 +41,9 @@ public class CompanyController {
     public ResponseEntity<ApiResponse<CompanyResponse>> getMyCompany(
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         CompanyResponse company = companyService.getMyCompany(userPrincipal.getId());
+        if (company == null) {
+            return ResponseEntity.ok(ApiResponse.success("Recruiter has no company registered yet.", null));
+        }
         return ResponseEntity.ok(ApiResponse.success("Company retrieved successfully", company));
     }
 

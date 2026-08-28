@@ -46,7 +46,8 @@ export function AdminJobsPage() {
         status: statusFilter ? (statusFilter as JobStatus) : undefined,
       }),
     placeholderData: (previousData) => previousData,
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: jobDetail, isLoading: isDetailLoading } = useQuery({
@@ -54,6 +55,7 @@ export function AdminJobsPage() {
     queryFn: () => adminService.getJobById(selectedJob!.id),
     enabled: isDetailModalOpen && !!selectedJob?.id,
     refetchInterval: isDetailModalOpen && !!selectedJob?.id ? 2500 : false,
+    refetchIntervalInBackground: false,
   });
 
   const moderateMutation = useMutation({
@@ -90,8 +92,7 @@ export function AdminJobsPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load jobs"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch platform job records'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -218,11 +219,11 @@ export function AdminJobsPage() {
         </CardContent>
         {jobsData && (
           <PaginationControls
-            currentPage={jobsData.number}
+            currentPage={jobsData.page ?? jobsData.number ?? 0}
             totalPages={jobsData.totalPages}
             totalElements={jobsData.totalElements}
             pageSize={jobsData.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         )}
       </Card>
@@ -268,14 +269,17 @@ export function AdminJobsPage() {
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Skill Requirements</h4>
               <div className="flex flex-wrap gap-2">
-                {jobDetail.skills?.map((s) => (
-                  <span
-                    key={s.id}
-                    className="px-2.5 py-1 rounded-md text-xs bg-slate-100 text-slate-800 font-medium border border-slate-200"
-                  >
-                    {s.skillName} ({s.minimumProficiency}) {s.isRequired ? '*' : '(Opt)'}
-                  </span>
-                ))}
+                {jobDetail.skills?.map((s) => {
+                  const isRequired = s.required ?? s.isRequired;
+                  return (
+                    <span
+                      key={s.id}
+                      className="px-2.5 py-1 rounded-md text-xs bg-slate-100 text-slate-800 font-medium border border-slate-200"
+                    >
+                      {s.skillName} ({s.minimumProficiency}) {isRequired ? '*' : '(Opt)'}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -22,15 +22,16 @@ export function AdminDashboardPage() {
   const { data: overview, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.admin.analyticsOverview,
     queryFn: () => adminService.getAnalyticsOverview(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   if (isLoading && !overview) return <LoadingSpinner text="Loading administrative dashboard..." />;
   if (isError) {
     return (
       <ErrorState
-        title="Could not load admin overview"
-        message={(error as any)?.response?.data?.message || 'Failed to retrieve platform analytics summary'}
+        error={error}
         onRetry={() => refetch()}
       />
     );

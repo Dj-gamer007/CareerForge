@@ -4,24 +4,32 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '@/services/notification.service';
 import { queryKeys } from '@/lib/queryClient';
 import { formatDate } from '@/lib/utils';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { NotificationResponse } from '@/types/notification.types';
+import { useAuthStore } from '@/features/auth/authStore';
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const isAccountDisabled = useAuthStore((state) => state.isAccountDisabled);
 
-  // Poll unread count regularly for real-time notification badge updates
+  // Poll unread count regularly for real-time notification badge updates only when active
   const { data: unreadCount = 0 } = useQuery({
     queryKey: queryKeys.notifications.unreadCount,
     queryFn: () => notificationService.getUnreadCount(),
-    refetchInterval: 2500,
+    enabled: !isAccountDisabled,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: notificationsData } = useQuery({
     queryKey: queryKeys.notifications.list(0),
     queryFn: () => notificationService.getNotifications({ page: 0, size: 5 }),
-    enabled: isOpen,
-    refetchInterval: isOpen ? 2500 : false,
+    enabled: isOpen && !isAccountDisabled,
+    refetchInterval: isOpen && !isAccountDisabled ? 2000 : false,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const markAsReadMutation = useMutation({
@@ -37,6 +45,114 @@ export function NotificationBell() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
+
+  const user = useAuthStore((state) => state.user);
+
+  const getNotificationLink = (notif: NotificationResponse) => {
+    const role = user?.role;
+    const type = notif.type;
+    const entityType = notif.relatedEntityType;
+    const entityId = notif.relatedEntityId;
+    const title = notif.title?.toLowerCase() || '';
+
+    if (role === 'ROLE_STUDENT') {
+      if (
+        type === 'APPLICATION_SHORTLISTED' ||
+        type === 'APPLICATION_ACCEPTED' ||
+        type === 'APPLICATION_REJECTED' ||
+        type === 'APPLICATION_UPDATED' ||
+        type === 'APPLICATION_UPDATE' ||
+        type === 'APPLICATION_SUBMITTED' ||
+        type === 'INTERVIEW_INVITE' ||
+        type === 'INTERVIEW_SCHEDULED' ||
+        type === 'INTERVIEW_RESCHEDULED' ||
+        entityType === 'APPLICATION' ||
+        title.includes('application') ||
+        title.includes('interview')
+      ) {
+        return '/student/applications';
+      }
+      if (type === 'JOB_RECOMMENDATION' || type === 'JOB_POSTING_PUBLISHED' || entityType === 'JOB' || title.includes('job')) {
+        return '/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED') {
+        return '/student/profile';
+      }
+    }
+
+    if (role === 'ROLE_RECRUITER') {
+      if (
+        type === 'COMPANY_VERIFIED' ||
+        type === 'COMPANY_VERIFICATION_REJECTED' ||
+        type === 'COMPANY_VERIFICATION_PENDING' ||
+        entityType === 'COMPANY' ||
+        title.includes('company')
+      ) {
+        return '/recruiter/company';
+      }
+      if (
+        type === 'JOB_POSTING_CLOSED' ||
+        type === 'JOB_POSTING_DRAFTED' ||
+        type === 'JOB_POSTING_ARCHIVED' ||
+        type === 'JOB_POSTING_PUBLISHED' ||
+        entityType === 'JOB' ||
+        title.includes('job')
+      ) {
+        return entityId && type === 'JOB_POSTING_DRAFTED' ? `/recruiter/jobs/${entityId}/edit` : '/recruiter/jobs';
+      }
+      if (entityType === 'APPLICATION' || type === 'APPLICATION_SUBMITTED' || title.includes('application')) {
+        return '/recruiter/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED') {
+        return '/recruiter/profile';
+      }
+    }
+
+    if (role === 'ROLE_ADMIN') {
+      if (
+        type === 'COMPANY_VERIFIED' ||
+        type === 'COMPANY_VERIFICATION_REJECTED' ||
+        type === 'COMPANY_VERIFICATION_PENDING' ||
+        entityType === 'COMPANY' ||
+        title.includes('company')
+      ) {
+        return '/admin/companies';
+      }
+      if (
+        type === 'JOB_POSTING_CLOSED' ||
+        type === 'JOB_POSTING_DRAFTED' ||
+        type === 'JOB_POSTING_ARCHIVED' ||
+        type === 'JOB_POSTING_PUBLISHED' ||
+        entityType === 'JOB' ||
+        title.includes('job') ||
+        title.includes('moderation')
+      ) {
+        return '/admin/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED' || entityType === 'USER' || title.includes('user') || title.includes('account')) {
+        return '/admin/users';
+      }
+      if (entityType === 'APPLICATION' || title.includes('application')) {
+        return '/admin/dashboard';
+      }
+    }
+
+    if (title.includes('company')) return '/admin/companies';
+    if (title.includes('job')) return '/jobs';
+    if (title.includes('application')) return '/student/applications';
+    return null;
+  };
+
+  const handleNotificationClick = (notif: NotificationResponse) => {
+    if (!notif.read && !notif.isRead) {
+      markAsReadMutation.mutate(notif.id);
+    }
+    setIsOpen(false);
+    const link = getNotificationLink(notif);
+    if (link) {
+      navigate(link);
+    }
+  };
 
   return (
     <div className="relative">
@@ -84,12 +200,10 @@ export function NotificationBell() {
                 notificationsData.content.map((notif) => (
                   <div
                     key={notif.id}
-                    className={`p-3 text-left transition-colors ${
-                      notif.read ? 'bg-white' : 'bg-indigo-50/40 hover:bg-indigo-50/70'
+                    className={`p-3 text-left transition-colors cursor-pointer ${
+                      notif.read || notif.isRead ? 'bg-white hover:bg-slate-50' : 'bg-indigo-50/40 hover:bg-indigo-50/70'
                     }`}
-                    onClick={() => {
-                      if (!notif.read) markAsReadMutation.mutate(notif.id);
-                    }}
+                    onClick={() => handleNotificationClick(notif)}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
@@ -98,6 +212,11 @@ export function NotificationBell() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 mt-1 line-clamp-2">{notif.message}</p>
+                    {notif.actorName && (
+                      <span className="text-[10px] text-indigo-600 font-medium block mt-1">
+                        Updated by {notif.actorName}
+                      </span>
+                    )}
                   </div>
                 ))
               ) : (

@@ -2,12 +2,12 @@ package com.careerforge.specification;
 
 import com.careerforge.entity.Company;
 import com.careerforge.entity.Job;
+import com.careerforge.entity.JobSkill;
+import com.careerforge.entity.Skill;
 import com.careerforge.entity.enums.JobStatus;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.WorkMode;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
 
@@ -48,7 +48,18 @@ public class AdminJobSpecification {
                 Predicate titleMatch = cb.like(cb.lower(root.get("title")), pattern);
                 Predicate descMatch = cb.like(cb.lower(root.get("description")), pattern);
                 Predicate companyNameMatch = cb.like(cb.lower(companyJoin.get("name")), pattern);
-                predicates.add(cb.or(titleMatch, descMatch, companyNameMatch));
+
+                Subquery<Long> skillKeywordSubquery = query.subquery(Long.class);
+                Root<JobSkill> jsRoot = skillKeywordSubquery.from(JobSkill.class);
+                Join<JobSkill, Skill> skillJoin = jsRoot.join("skill", JoinType.INNER);
+                skillKeywordSubquery.select(jsRoot.get("id"))
+                        .where(
+                                cb.equal(jsRoot.get("job"), root),
+                                cb.like(cb.lower(skillJoin.get("name")), pattern)
+                        );
+                Predicate skillMatch = cb.exists(skillKeywordSubquery);
+
+                predicates.add(cb.or(titleMatch, descMatch, companyNameMatch, skillMatch));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

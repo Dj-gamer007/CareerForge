@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { useAuthStore } from '@/features/auth/authStore';
 import { RecruiterJobsPage } from '@/features/recruiter/RecruiterJobsPage';
 
 const mockJobs = [
@@ -84,6 +85,15 @@ const server = setupServer(
 );
 
 beforeAll(() => server.listen());
+beforeEach(() => {
+  useAuthStore.setState({
+    isAuthenticated: true,
+    isLoading: false,
+    isInitialized: true,
+    user: { id: 10, email: 'recruiter@careerforge.local', role: 'ROLE_RECRUITER', fullName: 'Test Recruiter' } as any,
+    accessToken: 'mock-recruiter-token',
+  });
+});
 afterEach(() => {
   server.resetHandlers();
   jobsState = [

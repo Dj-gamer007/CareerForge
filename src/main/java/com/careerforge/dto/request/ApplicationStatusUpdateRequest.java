@@ -1,6 +1,8 @@
 package com.careerforge.dto.request;
 
+import com.careerforge.config.FlexibleLocalDateTimeDeserializer;
 import com.careerforge.entity.enums.ApplicationStatus;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -22,5 +24,7 @@ public class ApplicationStatusUpdateRequest {
     @Size(max = 3000, message = "Recruiter notes must not exceed 3000 characters")
     private String recruiterNotes;
 
+    @JsonDeserialize(using = FlexibleLocalDateTimeDeserializer.class)
     private LocalDateTime interviewScheduledAt;
 }
+

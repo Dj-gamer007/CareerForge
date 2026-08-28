@@ -20,6 +20,9 @@ export function StudentSavedJobsPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.student.savedJobs(page),
     queryFn: () => applicationService.getSavedJobs({ page, size: 10 }),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const removeMutation = useMutation({
@@ -30,12 +33,11 @@ export function StudentSavedJobsPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading your bookmarks..." />;
+  if (isLoading && !data) return <LoadingSpinner text="Loading your bookmarks..." />;
   if (isError) {
     return (
       <ErrorState
-        title="Could not load bookmarks"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch saved jobs'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -93,11 +95,11 @@ export function StudentSavedJobsPage() {
           </div>
 
           <PaginationControls
-            currentPage={data.number}
+            currentPage={data.page ?? data.number ?? 0}
             totalPages={data.totalPages}
             totalElements={data.totalElements}
             pageSize={data.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         </div>
       )}

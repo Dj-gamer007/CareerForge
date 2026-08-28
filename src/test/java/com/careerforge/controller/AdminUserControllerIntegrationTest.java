@@ -367,9 +367,10 @@ class AdminUserControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(disableReq)))
                 .andExpect(status().isOk());
 
-        // Use the SAME existing JWT token -> Must be rejected with 401 Unauthorized
+        // Use the SAME existing JWT token -> Must be rejected with 403 Forbidden (ACCOUNT_DISABLED)
         mockMvc.perform(get("/api/v1/students/profile")
                         .header("Authorization", studentToken))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
     }
 }

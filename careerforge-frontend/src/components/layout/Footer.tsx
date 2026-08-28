@@ -1,5 +1,5 @@
-import { Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { CareerForgeIcon } from '@/components/brand/CareerForgeIcon';
 
 export function Footer() {
   return (
@@ -7,9 +7,7 @@ export function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2.5 font-bold text-lg text-slate-900">
-            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
-              <Briefcase className="w-4 h-4" />
-            </div>
+            <CareerForgeIcon className="w-7 h-7 rounded-lg shadow-none" />
             <span>Career<span className="text-indigo-600">Forge</span></span>
           </div>
           <p className="text-xs text-slate-500 text-center">

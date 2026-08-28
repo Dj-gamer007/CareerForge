@@ -4,6 +4,7 @@ import com.careerforge.dto.request.JobSearchCriteria;
 import com.careerforge.entity.Company;
 import com.careerforge.entity.Job;
 import com.careerforge.entity.JobSkill;
+import com.careerforge.entity.Skill;
 import com.careerforge.entity.enums.JobStatus;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
@@ -21,14 +22,25 @@ public class JobSpecification {
             // 1. Only PUBLISHED jobs for public/candidate discovery
             predicates.add(cb.equal(root.get("status"), JobStatus.PUBLISHED));
 
-            // 2. Keyword filter across title, description, and company name
+            // 2. Keyword filter across title, description, company name, and job skills (both required & optional)
             if (StringUtils.hasText(criteria.getKeyword())) {
                 String pattern = "%" + criteria.getKeyword().toLowerCase().trim() + "%";
                 Join<Job, Company> companyJoin = root.join("company", JoinType.LEFT);
                 Predicate titleMatch = cb.like(cb.lower(root.get("title")), pattern);
                 Predicate descMatch = cb.like(cb.lower(root.get("description")), pattern);
                 Predicate companyMatch = cb.like(cb.lower(companyJoin.get("name")), pattern);
-                predicates.add(cb.or(titleMatch, descMatch, companyMatch));
+
+                Subquery<Long> skillKeywordSubquery = query.subquery(Long.class);
+                Root<JobSkill> jsRoot = skillKeywordSubquery.from(JobSkill.class);
+                Join<JobSkill, Skill> skillJoin = jsRoot.join("skill", JoinType.INNER);
+                skillKeywordSubquery.select(jsRoot.get("id"))
+                        .where(
+                                cb.equal(jsRoot.get("job"), root),
+                                cb.like(cb.lower(skillJoin.get("name")), pattern)
+                        );
+                Predicate skillMatch = cb.exists(skillKeywordSubquery);
+
+                predicates.add(cb.or(titleMatch, descMatch, companyMatch, skillMatch));
             }
 
             // 3. Location / Remote filter

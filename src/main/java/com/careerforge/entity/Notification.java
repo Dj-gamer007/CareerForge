@@ -37,4 +37,17 @@ public class Notification extends BaseEntity {
     @Column(name = "is_read", nullable = false)
     @Builder.Default
     private boolean isRead = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_user_id")
+    private User actorUser;
+
+    @Column(name = "actor_name", length = 150)
+    private String actorName;
+
+    @Column(name = "related_entity_type", length = 50)
+    private String relatedEntityType;
+
+    @Column(name = "related_entity_id")
+    private Long relatedEntityId;
 }

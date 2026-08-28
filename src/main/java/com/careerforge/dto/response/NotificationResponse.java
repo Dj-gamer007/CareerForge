@@ -28,4 +28,9 @@ public class NotificationResponse {
 
     @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
     private LocalDateTime updatedAt;
+
+    private String actorName;
+    private Long actorUserId;
+    private String relatedEntityType;
+    private Long relatedEntityId;
 }

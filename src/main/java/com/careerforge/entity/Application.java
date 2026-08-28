@@ -48,7 +48,7 @@ public class Application extends BaseEntity {
     private Job job;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "resume_id", nullable = false)
+    @JoinColumn(name = "resume_id", nullable = true)
     private Resume resume;
 
     @Enumerated(EnumType.STRING)

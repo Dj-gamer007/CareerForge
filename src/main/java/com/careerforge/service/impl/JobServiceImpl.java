@@ -3,14 +3,21 @@ package com.careerforge.service.impl;
 import com.careerforge.dto.request.*;
 import com.careerforge.dto.response.*;
 import com.careerforge.entity.*;
+import com.careerforge.entity.enums.ApplicationStatus;
+import com.careerforge.entity.enums.AuditEventType;
+import com.careerforge.entity.enums.AuditTargetType;
 import com.careerforge.entity.enums.JobStatus;
+import com.careerforge.entity.enums.NotificationType;
 import com.careerforge.entity.enums.WorkMode;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.exception.ResourceNotFoundException;
+import com.careerforge.repository.ApplicationRepository;
 import com.careerforge.repository.JobRepository;
 import com.careerforge.repository.JobSkillRepository;
 import com.careerforge.repository.SkillRepository;
+import com.careerforge.repository.UserRepository;
 import com.careerforge.service.JobService;
+import com.careerforge.service.NotificationService;
 import com.careerforge.service.RecruiterService;
 import com.careerforge.specification.JobSpecification;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +48,11 @@ public class JobServiceImpl implements JobService {
     private final JobRepository jobRepository;
     private final JobSkillRepository jobSkillRepository;
     private final SkillRepository skillRepository;
+    private final UserRepository userRepository;
+    private final ApplicationRepository applicationRepository;
+    private final com.careerforge.repository.SavedJobRepository savedJobRepository;
     private final RecruiterService recruiterService;
+    private final NotificationService notificationService;
     private final com.careerforge.service.AuditLogService auditLogService;
 
     // ==========================================
@@ -83,6 +94,26 @@ public class JobServiceImpl implements JobService {
         log.info("Created job '{}' (id: {}) as DRAFT for company ID: {} by user ID: {}",
                 savedJob.getTitle(), savedJob.getId(), recruiter.getCompany().getId(), userId);
 
+        // Notify active Admins that a new job is pending moderation / review
+        List<User> admins = userRepository.findAllByRoleAndEnabledTrue(com.careerforge.entity.enums.Role.ROLE_ADMIN);
+        String companyName = savedJob.getCompany() != null ? savedJob.getCompany().getName() : "Company";
+        String notificationTitle = "New Job Pending Moderation";
+        String notificationMessage = String.format("%s at %s requires review.", savedJob.getTitle(), companyName);
+
+        for (User admin : admins) {
+            try {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        notificationTitle,
+                        notificationMessage,
+                        com.careerforge.entity.enums.NotificationType.SYSTEM_ALERT
+                );
+            } catch (Exception e) {
+                log.warn("Failed to dispatch job moderation notification to admin user ID: {}", admin.getId(), e);
+            }
+        }
+        log.info("Dispatched 'New Job Pending Moderation' notification to {} active admins for job ID: {}", admins.size(), savedJob.getId());
+
         return mapToDetailResponse(savedJob, attachedSkills);
     }
 
@@ -114,10 +145,22 @@ public class JobServiceImpl implements JobService {
         RecruiterProfile recruiter = getValidatedRecruiterWithCompany(userId);
         Job job = getJobWithOwnershipCheck(jobId, recruiter);
         validateSalaryRange(request.getSalaryMin(), request.getSalaryMax());
+        boolean titleChanged = !Objects.equals(job.getTitle(), request.getTitle().trim());
+        boolean descChanged = !Objects.equals(job.getDescription(), request.getDescription().trim());
+        String location = StringUtils.hasText(request.getLocation()) ? request.getLocation().trim() : (request.getWorkMode() == WorkMode.REMOTE ? "Remote" : "Not Specified");
+        boolean locationChanged = !Objects.equals(job.getLocation(), location);
+        boolean workModeChanged = job.getWorkMode() != request.getWorkMode();
+        boolean jobTypeChanged = job.getJobType() != request.getJobType();
+        boolean expLevelChanged = job.getExperienceLevel() != request.getExperienceLevel();
+        boolean salaryMinChanged = !Objects.equals(job.getSalaryMin(), request.getSalaryMin());
+        boolean salaryMaxChanged = !Objects.equals(job.getSalaryMax(), request.getSalaryMax());
+        boolean deadlineChanged = !Objects.equals(job.getDeadline(), request.getDeadline());
+
+        boolean hasMeaningfulChanges = titleChanged || descChanged || locationChanged || workModeChanged ||
+                jobTypeChanged || expLevelChanged || salaryMinChanged || salaryMaxChanged || deadlineChanged;
 
         job.setTitle(request.getTitle().trim());
         job.setDescription(request.getDescription().trim());
-        String location = StringUtils.hasText(request.getLocation()) ? request.getLocation().trim() : (request.getWorkMode() == WorkMode.REMOTE ? "Remote" : "Not Specified");
         job.setLocation(location);
         job.setWorkMode(request.getWorkMode());
         job.setJobType(request.getJobType());
@@ -134,6 +177,42 @@ public class JobServiceImpl implements JobService {
         // Replace skills
         jobSkillRepository.deleteAllByJob(updatedJob);
         List<JobSkill> attachedSkills = attachSkillsToJob(updatedJob, request.getSkills());
+
+        // Notify active applicants if meaningful job fields changed
+        if (hasMeaningfulChanges) {
+            List<com.careerforge.entity.Application> apps = applicationRepository.findAllByJob(updatedJob);
+            if (!apps.isEmpty()) {
+                String recruiterName = ((recruiter.getFirstName() != null ? recruiter.getFirstName() : "") + " "
+                        + (recruiter.getLastName() != null ? recruiter.getLastName() : "")).trim();
+                String senderName = recruiterName.isEmpty() ? "Recruiter" : recruiterName;
+                String companyName = updatedJob.getCompany() != null ? updatedJob.getCompany().getName() : "Company";
+                String notifTitle = "Job Updated";
+                String notifMessage = String.format("The '%s' position at %s has been updated by the recruiter. Please review the latest job details.",
+                        updatedJob.getTitle(), companyName);
+
+                for (com.careerforge.entity.Application app : apps) {
+                    if (app.getStatus() != ApplicationStatus.WITHDRAWN &&
+                            app.getStudentProfile() != null &&
+                            app.getStudentProfile().getUser() != null) {
+                        try {
+                            notificationService.sendNotification(
+                                    app.getStudentProfile().getUser().getId(),
+                                    userId,
+                                    senderName,
+                                    notifTitle,
+                                    notifMessage,
+                                    NotificationType.APPLICATION_UPDATED,
+                                    "JOB",
+                                    updatedJob.getId()
+                            );
+                        } catch (Exception e) {
+                            log.warn("Failed to dispatch job update notification to applicant user ID: {}",
+                                    app.getStudentProfile().getUser().getId(), e);
+                        }
+                    }
+                }
+            }
+        }
 
         log.info("Updated job ID: {} by user ID: {}", jobId, userId);
         return mapToDetailResponse(updatedJob, attachedSkills);
@@ -187,6 +266,27 @@ public class JobServiceImpl implements JobService {
         Job saved = jobRepository.save(job);
         List<JobSkill> skills = jobSkillRepository.findAllByJobWithSkill(saved);
         log.info("Published job ID: {} for company ID: {}", jobId, recruiter.getCompany().getId());
+
+        // Notify all eligible students when job is published
+        List<User> students = userRepository.findAllByRoleAndEnabledTrue(com.careerforge.entity.enums.Role.ROLE_STUDENT);
+        String companyName = saved.getCompany() != null ? saved.getCompany().getName() : "Company";
+        String notificationTitle = "New Job Posted";
+        String notificationMessage = String.format("A new job opportunity has been posted: %s at %s.", saved.getTitle(), companyName);
+
+        for (User student : students) {
+            try {
+                notificationService.sendNotification(
+                        student.getId(),
+                        notificationTitle,
+                        notificationMessage,
+                        com.careerforge.entity.enums.NotificationType.JOB_RECOMMENDATION
+                );
+            } catch (Exception e) {
+                log.warn("Failed to dispatch job publication notification to student user ID: {}", student.getId(), e);
+            }
+        }
+        log.info("Dispatched 'New Job Posted' notification to {} active students for job ID: {}", students.size(), saved.getId());
+
         return mapToDetailResponse(saved, skills);
     }
 
@@ -220,6 +320,26 @@ public class JobServiceImpl implements JobService {
         job.setStatus(JobStatus.CLOSED);
         Job saved = jobRepository.save(job);
         List<JobSkill> skills = jobSkillRepository.findAllByJobWithSkill(saved);
+
+        // Notify active candidates who applied for this job
+        String recruiterName = ((recruiter.getFirstName() != null ? recruiter.getFirstName() : "") + " "
+                + (recruiter.getLastName() != null ? recruiter.getLastName() : "")).trim();
+        List<com.careerforge.entity.Application> apps = applicationRepository.findAllByJob(saved);
+        for (com.careerforge.entity.Application app : apps) {
+            if (app.getStatus() != ApplicationStatus.WITHDRAWN && app.getStudentProfile() != null && app.getStudentProfile().getUser() != null) {
+                notificationService.sendNotification(
+                        app.getStudentProfile().getUser().getId(),
+                        userId,
+                        recruiterName.isEmpty() ? "Recruiter" : recruiterName,
+                        "Job Closed",
+                        "The job '" + saved.getTitle() + "' at " + saved.getCompany().getName() + " is currently closed.",
+                        NotificationType.JOB_POSTING_CLOSED,
+                        "JOB",
+                        saved.getId()
+                );
+            }
+        }
+
         log.info("Closed job ID: {}", jobId);
         return mapToDetailResponse(saved, skills);
     }
@@ -278,6 +398,26 @@ public class JobServiceImpl implements JobService {
         job.setStatus(JobStatus.ARCHIVED);
         Job saved = jobRepository.save(job);
         List<JobSkill> skills = jobSkillRepository.findAllByJobWithSkill(saved);
+
+        // Notify active candidates who applied for this job
+        String recruiterName = ((recruiter.getFirstName() != null ? recruiter.getFirstName() : "") + " "
+                + (recruiter.getLastName() != null ? recruiter.getLastName() : "")).trim();
+        List<com.careerforge.entity.Application> apps = applicationRepository.findAllByJob(saved);
+        for (com.careerforge.entity.Application app : apps) {
+            if (app.getStatus() != ApplicationStatus.WITHDRAWN && app.getStudentProfile() != null && app.getStudentProfile().getUser() != null) {
+                notificationService.sendNotification(
+                        app.getStudentProfile().getUser().getId(),
+                        userId,
+                        recruiterName.isEmpty() ? "Recruiter" : recruiterName,
+                        "Job Archived",
+                        "The job '" + saved.getTitle() + "' at " + saved.getCompany().getName() + " has been archived.",
+                        NotificationType.JOB_POSTING_ARCHIVED,
+                        "JOB",
+                        saved.getId()
+                );
+            }
+        }
+
         log.info("Archived job ID: {}", jobId);
         return mapToDetailResponse(saved, skills);
     }
@@ -292,9 +432,93 @@ public class JobServiceImpl implements JobService {
             throw new BadRequestException("Cannot delete a " + job.getStatus() + " job. Please unpublish or archive it first.");
         }
 
+        String jobTitle = job.getTitle();
+        String companyName = job.getCompany() != null ? job.getCompany().getName() : "Company";
+        String recruiterName = ((recruiter.getFirstName() != null ? recruiter.getFirstName() : "") + " "
+                + (recruiter.getLastName() != null ? recruiter.getLastName() : "")).trim();
+        String senderName = recruiterName.isEmpty() ? "Recruiter" : recruiterName;
+
+        // 1. Find all applications for this job
+        List<com.careerforge.entity.Application> apps = applicationRepository.findAllByJob(job);
+        int affectedAppsCount = apps.size();
+
+        // 2. Notify all affected students
+        String studentNotifTitle = "Job Position Deleted";
+        String studentNotifMessage = String.format("The '%s' position at '%s' has been deleted due to business requirements. We're sorry for the inconvenience. Your application for this position is no longer active.",
+                jobTitle, companyName);
+
+        for (com.careerforge.entity.Application app : apps) {
+            if (app.getStudentProfile() != null && app.getStudentProfile().getUser() != null) {
+                try {
+                    notificationService.sendNotification(
+                            app.getStudentProfile().getUser().getId(),
+                            userId,
+                            senderName,
+                            studentNotifTitle,
+                            studentNotifMessage,
+                            NotificationType.JOB_POSTING_CLOSED,
+                            "JOB",
+                            jobId
+                    );
+                } catch (Exception e) {
+                    log.warn("Failed to dispatch job deletion notification to student user ID: {}",
+                            app.getStudentProfile().getUser().getId(), e);
+                }
+            }
+        }
+
+        // 3. Notify Admins
+        List<User> admins = userRepository.findAllByRoleAndEnabledTrue(com.careerforge.entity.enums.Role.ROLE_ADMIN);
+        String adminNotifTitle = "Job Deleted";
+        String adminNotifMessage = String.format("The '%s' position at '%s' was deleted due to business requirements. All affected applicants have been notified.",
+                jobTitle, companyName);
+
+        for (User admin : admins) {
+            try {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        userId,
+                        senderName,
+                        adminNotifTitle,
+                        adminNotifMessage,
+                        NotificationType.SYSTEM_ALERT,
+                        "JOB",
+                        jobId
+                );
+            } catch (Exception e) {
+                log.warn("Failed to dispatch job deletion notification to admin user ID: {}", admin.getId(), e);
+            }
+        }
+
+        // 4. Clean up saved jobs, skills, applications, and delete job
+        savedJobRepository.deleteAllByJob(job);
         jobSkillRepository.deleteAllByJob(job);
+        if (!apps.isEmpty()) {
+            applicationRepository.deleteAll(apps);
+        }
         jobRepository.delete(job);
-        log.info("Deleted job ID: {}", jobId);
+
+        // 5. Audit Logging
+        String actorEmail = recruiter.getUser() != null ? recruiter.getUser().getEmail() : "RECRUITER";
+        auditLogService.logSuccess(
+                userId,
+                actorEmail,
+                "ROLE_RECRUITER",
+                AuditEventType.JOB_DELETED,
+                AuditTargetType.JOB,
+                jobId,
+                jobTitle,
+                "Job deleted due to business requirements",
+                Map.of(
+                        "jobId", jobId,
+                        "jobTitle", jobTitle,
+                        "companyName", companyName,
+                        "affectedApplicationsCount", affectedAppsCount,
+                        "notificationsDispatched", true
+                )
+        );
+
+        log.info("Deleted job ID: {} (affected {} applications) by user ID: {}", jobId, affectedAppsCount, userId);
     }
 
     // ==========================================

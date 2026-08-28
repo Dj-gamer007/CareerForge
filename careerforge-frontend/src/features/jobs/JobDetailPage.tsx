@@ -21,7 +21,9 @@ import {
   Send,
   ArrowLeft,
   CheckCircle2,
+  Search,
 } from 'lucide-react';
+import { notificationService } from '@/services/notification.service';
 
 export function JobDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -47,14 +49,21 @@ export function JobDetailPage() {
   const isStudent = isAuthenticated && user?.role === 'ROLE_STUDENT';
 
   // Student applications query to determine applied status
-  const { data: studentApps } = useQuery({
+  const { data: studentApps, isLoading: isStudentAppsLoading } = useQuery({
     queryKey: ['student', 'applications'],
     queryFn: () => applicationService.getStudentApplications({ size: 100 }),
     enabled: isStudent,
   });
 
+  // Student notifications query to detect historical application context
+  const { data: notificationsData, isLoading: isNotificationsLoading } = useQuery({
+    queryKey: ['notifications', 'historical'],
+    queryFn: () => notificationService.getNotifications({ page: 0, size: 50 }),
+    enabled: isStudent,
+  });
+
   const existingApplication = studentApps?.content?.find(
-    (app) => app.jobId === job?.id && app.status !== 'WITHDRAWN'
+    (app) => (app.jobSlug === slug || String(app.jobId) === slug || (job && app.jobId === job.id)) && app.status !== 'WITHDRAWN'
   );
   const hasApplied = !!existingApplication;
 
@@ -81,14 +90,112 @@ export function JobDetailPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading job dossier..." />;
+  if (isLoading || (isStudent && (isStudentAppsLoading || isNotificationsLoading))) {
+    return <LoadingSpinner text="Loading job dossier..." />;
+  }
   if (isError || !job) {
+    // 1. If the authenticated student has an existing application for this now-unavailable job:
+    if (existingApplication) {
+      let customTitle = 'Job Currently Unavailable';
+      let customMessage = `The ${existingApplication.jobTitle} position at ${existingApplication.companyName} is currently unavailable because the recruiter has paused or unpublished this job. Your application has not been deleted and your application status remains ${existingApplication.status.replace('_', ' ')}.`;
+
+      if (existingApplication.jobStatus === 'CLOSED') {
+        customTitle = 'Job Closed';
+        customMessage = `The ${existingApplication.jobTitle} position at ${existingApplication.companyName} is now closed. Your application is still intact and your current application status is ${existingApplication.status.replace('_', ' ')}.`;
+      } else if (existingApplication.jobStatus === 'ARCHIVED') {
+        customTitle = 'Job Archived';
+        customMessage = `The ${existingApplication.jobTitle} position at ${existingApplication.companyName} has been archived. Your application and application history remain intact and are still available from your Applications page.`;
+      }
+
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-12">
+          <ErrorState
+            title={customTitle}
+            message={customMessage}
+            onRetry={() => navigate('/student/applications')}
+            retryText="Back to Applications"
+            secondaryAction={{
+              label: 'Explore Other Jobs',
+              onClick: () => navigate('/jobs'),
+              icon: ArrowLeft,
+              variant: 'outline',
+            }}
+          />
+        </div>
+      );
+    }
+
+    // 2. If the authenticated student previously applied, but that job/application was deleted/removed:
+    const matchedNotif = notificationsData?.content?.find((n) => {
+      const isAppOrJobNotif =
+        n.type?.startsWith('APPLICATION') ||
+        n.type === 'JOB_POSTING_CLOSED' ||
+        n.title?.toLowerCase().includes('application') ||
+        n.title?.toLowerCase().includes('job position deleted') ||
+        n.title?.toLowerCase().includes('job deleted') ||
+        n.message?.toLowerCase().includes('application') ||
+        n.message?.toLowerCase().includes('job position deleted') ||
+        n.message?.toLowerCase().includes('has been deleted due to business requirements');
+      if (!isAppOrJobNotif) return false;
+
+      if (slug && !isNaN(Number(slug)) && n.relatedEntityType === 'JOB' && n.relatedEntityId === Number(slug)) {
+        return true;
+      }
+
+      if (slug) {
+        const slugClean = slug.replace(/-[a-f0-9]{4,}$/i, '').replace(/-/g, ' ').toLowerCase().trim();
+        if (slugClean.length >= 3 && (n.title?.toLowerCase().includes(slugClean) || n.message?.toLowerCase().includes(slugClean))) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (matchedNotif) {
+      const match1 = matchedNotif.message.match(/for '([^']+)' at (.+?)(?:\s+has|\s+is|\.|$)/i);
+      const match2 = matchedNotif.message.match(/position '([^']+)' at (.+?)(?:\s+has|\s+is|\.|$)/i);
+      const match3 = matchedNotif.message.match(/The '([^']+)' position at (.+?)(?:\s+has|\s+is|\.|$)/i);
+      const match4 = matchedNotif.title.match(/(?:Application (?:Submitted|Update)|Job Position Deleted): (.+)/i);
+
+      const jobTitle =
+        match3?.[1] ||
+        match1?.[1] ||
+        match2?.[1] ||
+        match4?.[1] ||
+        (slug ? slug.replace(/-[a-f0-9]{4,}$/i, '').replace(/-/g, ' ') : 'requested');
+      const companyName = match3?.[2]?.trim() || match1?.[2]?.trim() || match2?.[2]?.trim() || 'the company';
+
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-12">
+          <ErrorState
+            title="Job Position Deleted"
+            message={`The '${jobTitle}' position at '${companyName}' has been deleted due to business requirements. We're sorry for the inconvenience. Your application is no longer active.`}
+            primaryAction={{
+              label: 'Search for Another Job',
+              onClick: () => navigate('/jobs'),
+              icon: Search,
+              variant: 'primary',
+            }}
+            secondaryAction={{
+              label: 'Back to Applications',
+              onClick: () => navigate('/student/applications'),
+              icon: ArrowLeft,
+              variant: 'outline',
+            }}
+          />
+        </div>
+      );
+    }
+
+    // 3. Standard public 404 for genuinely invalid or nonexistent jobs:
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
         <ErrorState
-          title="Job Not Found"
-          message={(error as any)?.response?.data?.message || 'This job opening may have been closed or archived.'}
+          error={error}
+          title={!job && !error ? 'Job Not Found' : undefined}
+          message={!job && !error ? 'This job opening may have been closed or archived.' : undefined}
           onRetry={() => navigate('/jobs')}
+          retryText="Back to Job Directory"
         />
       </div>
     );
@@ -154,24 +261,36 @@ export function JobDetailPage() {
               <div>
                 <h3 className="text-base font-bold text-slate-900 mb-3">Target Technical Competencies</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {job.skills.map((s) => (
-                    <div
-                      key={s.id}
-                      className={`p-3 rounded-lg border text-xs ${
-                        s.isRequired ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900">{s.skillName}</span>
-                        <span className="text-[10px] font-semibold uppercase text-slate-500">
-                          {s.isRequired ? 'Required' : 'Optional'}
-                        </span>
+                  {job.skills.map((s) => {
+                    const isRequiredSkill = s.required ?? s.isRequired;
+                    const statusLabel = isRequiredSkill === true ? 'REQUIRED' : isRequiredSkill === false ? 'OPTIONAL' : 'UNKNOWN';
+                    return (
+                      <div
+                        key={s.id}
+                        className={`p-3 rounded-lg border text-xs ${
+                          isRequiredSkill
+                            ? 'bg-indigo-50/50 border-indigo-200'
+                            : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{s.skillName}</span>
+                          <span
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                              isRequiredSkill
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-slate-200/80 text-slate-600'
+                            }`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Min. Proficiency: <span className="font-medium text-slate-700">{s.minimumProficiency}</span>
+                        </p>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Min. Proficiency: <span className="font-medium text-slate-700">{s.minimumProficiency}</span>
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </CardContent>

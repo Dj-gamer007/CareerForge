@@ -64,6 +64,9 @@ class AdminUserServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private NotificationService notificationService;
+
     @InjectMocks
     private AdminUserServiceImpl adminUserService;
 
@@ -252,10 +255,20 @@ class AdminUserServiceTest {
         assertThat(result.isEnabled()).isFalse();
         assertThat(studentUser.isEnabled()).isFalse();
         verify(userRepository).save(studentUser);
+        verify(notificationService).sendNotification(
+                eq(2L),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Account Disabled"),
+                contains("student account has been disabled"),
+                eq(com.careerforge.entity.enums.NotificationType.ACCOUNT_DISABLED),
+                eq("USER"),
+                eq(2L)
+        );
     }
 
     @Test
-    @DisplayName("Update user status - Admin enables disabled user successfully")
+    @DisplayName("Update user status - Admin enables disabled user successfully without sending account disabled notification")
     void testUpdateUserStatus_EnableUser() {
         studentUser.setEnabled(false);
         UserStatusUpdateRequest req = UserStatusUpdateRequest.builder()
@@ -274,6 +287,7 @@ class AdminUserServiceTest {
         assertThat(result.isEnabled()).isTrue();
         assertThat(studentUser.isEnabled()).isTrue();
         verify(userRepository).save(studentUser);
+        verifyNoInteractions(notificationService);
     }
 
     @Test

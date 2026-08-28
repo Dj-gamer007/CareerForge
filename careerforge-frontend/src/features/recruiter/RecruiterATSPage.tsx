@@ -8,13 +8,13 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
-import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Modal } from '@/components/ui/Modal';
 import { ScoreGauge } from '@/components/ui/ScoreGauge';
+import { DateTimePicker } from '@/components/ui/DateTimePicker';
 import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
 import { ErrorState } from '@/components/feedback/ErrorState';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatDateTime } from '@/lib/utils';
 import {
   LayoutGrid,
   List,
@@ -22,6 +22,7 @@ import {
   FileText,
   MessageSquare,
   ArrowLeft,
+  Calendar,
 } from 'lucide-react';
 import { ApplicationStatus, RecruiterApplicationResponse } from '@/types/application.types';
 
@@ -30,13 +31,13 @@ const ATS_STAGES: Array<{ status: ApplicationStatus; label: string }> = [
   { status: 'UNDER_REVIEW', label: 'Under Review' },
   { status: 'SHORTLISTED', label: 'Shortlisted' },
   { status: 'INTERVIEW_SCHEDULED', label: 'Interview Scheduled' },
-  { status: 'ACCEPTED', label: 'Offer Extended' },
-  { status: 'REJECTED', label: 'Declined' },
+  { status: 'ACCEPTED', label: 'Accepted' },
+  { status: 'REJECTED', label: 'Rejected' },
 ];
 
 export function RecruiterATSPage() {
   const { jobId } = useParams<{ jobId: string }>();
-  const parsedJobId = Number(jobId);
+  const parsedJobId = Number(jobId) || 0;
   const queryClient = useQueryClient();
 
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
@@ -46,6 +47,7 @@ export function RecruiterATSPage() {
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<ApplicationStatus>('UNDER_REVIEW');
   const [interviewDate, setInterviewDate] = useState('');
+  const [statusModalError, setStatusModalError] = useState<any | null>(null);
 
   // Candidate dossier drawer
   const [isDossierOpen, setIsDossierOpen] = useState(false);
@@ -62,6 +64,9 @@ export function RecruiterATSPage() {
     queryKey: queryKeys.recruiter.applications(parsedJobId),
     queryFn: () => applicationService.getRecruiterApplications(parsedJobId, { size: 100 }),
     enabled: !!parsedJobId,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const { data: appDetail, isLoading: isDetailLoading } = useQuery({
@@ -79,17 +84,27 @@ export function RecruiterATSPage() {
 
   // Mutations
   const updateStatusMutation = useMutation({
-    mutationFn: ({ appId, status, interviewScheduledAt }: any) =>
-      applicationService.updateApplicationStatus(appId, {
+    mutationFn: ({ appId, status, interviewScheduledAt }: any) => {
+      let isoInterviewTime: string | undefined = undefined;
+      if (interviewScheduledAt) {
+        const parsed = new Date(interviewScheduledAt);
+        isoInterviewTime = !isNaN(parsed.getTime()) ? parsed.toISOString() : interviewScheduledAt;
+      }
+      return applicationService.updateApplicationStatus(appId, {
         status,
-        interviewScheduledAt: interviewScheduledAt ? `${interviewScheduledAt}:00` : undefined,
-      }),
+        interviewScheduledAt: isoInterviewTime,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.applications(parsedJobId) });
       if (selectedAppId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.applicationDetail(selectedAppId) });
       }
       setIsStatusModalOpen(false);
+      setStatusModalError(null);
+    },
+    onError: (err: any) => {
+      setStatusModalError(err);
     },
   });
 
@@ -109,10 +124,11 @@ export function RecruiterATSPage() {
     },
   });
 
-  const openStatusModal = (appId: number, nextStatus: ApplicationStatus) => {
+  const openStatusModal = (appId: number, nextStatus: ApplicationStatus, currentScheduledAt?: string) => {
     setSelectedAppId(appId);
     setTargetStatus(nextStatus);
-    setInterviewDate('');
+    setInterviewDate(currentScheduledAt || '');
+    setStatusModalError(null);
     setIsStatusModalOpen(true);
   };
 
@@ -137,18 +153,18 @@ export function RecruiterATSPage() {
     }
   };
 
-  if (isLoading) return <LoadingSpinner text="Loading applicant tracking pipeline..." />;
+  if (isLoading && !appsData) return <LoadingSpinner text="Loading applicant tracking pipeline..." />;
   if (isError) {
     return (
       <ErrorState
-        title="Could not load ATS applicants"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch candidate pipeline'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
   }
 
   const applications = appsData?.content || [];
+  const selectedApp = applications.find((a) => a.id === selectedAppId) || (appDetail?.id === selectedAppId ? appDetail : null);
 
   return (
     <div className="space-y-6">
@@ -226,6 +242,13 @@ export function RecruiterATSPage() {
                             {app.hasResume && <FileText className="w-3.5 h-3.5 text-indigo-600" />}
                           </div>
 
+                          {app.interviewScheduledAt && (
+                            <div className="flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50/80 rounded px-1.5 py-0.5 border border-indigo-100">
+                              <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span className="truncate">Interview: {formatDateTime(app.interviewScheduledAt)}</span>
+                            </div>
+                          )}
+
                           {/* Quick Transition Trigger */}
                           <div className="pt-2 flex items-center gap-1.5">
                             {app.status === 'APPLIED' && (
@@ -263,7 +286,7 @@ export function RecruiterATSPage() {
                                 className="w-full text-[10px] py-1 h-7"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openStatusModal(app.id, 'INTERVIEW_SCHEDULED');
+                                  openStatusModal(app.id, 'INTERVIEW_SCHEDULED', app.interviewScheduledAt);
                                 }}
                               >
                                 Schedule Interview
@@ -333,7 +356,15 @@ export function RecruiterATSPage() {
                     <td className="px-6 py-4">
                       <Badge variant={getStatusBadgeVariant(app.status)}>{app.status.replace('_', ' ')}</Badge>
                     </td>
-                    <td className="px-6 py-4 text-xs">{formatDate(app.appliedAt)}</td>
+                    <td className="px-6 py-4 text-xs">
+                      <div>{formatDate(app.appliedAt)}</div>
+                      {app.interviewScheduledAt && (
+                        <div className="text-[11px] font-semibold text-indigo-700 mt-1 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>Interview: {formatDateTime(app.interviewScheduledAt)}</span>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <Button size="sm" variant="outline" onClick={() => openDossier(app)}>
                         Dossier
@@ -363,12 +394,42 @@ export function RecruiterATSPage() {
               <div>
                 <h3 className="text-lg font-bold text-slate-900">{appDetail.candidateName}</h3>
                 <p className="text-xs text-slate-500">{appDetail.candidateEmail} &bull; {appDetail.candidatePhone || 'No phone'}</p>
-                <div className="mt-2">
+                <div className="mt-2 flex items-center gap-2">
                   <Badge variant={getStatusBadgeVariant(appDetail.status)}>{appDetail.status.replace('_', ' ')}</Badge>
                 </div>
               </div>
               <ScoreGauge score={appDetail.matchScoreAtApplication} size="md" />
             </div>
+
+            {/* Scheduled Interview Banner */}
+            {appDetail.interviewScheduledAt && (
+              <div
+                className={`flex items-center justify-between p-3 rounded-lg border text-xs ${
+                  appDetail.status === 'REJECTED'
+                    ? 'border-slate-200 bg-slate-50 text-slate-600'
+                    : 'border-indigo-200 bg-indigo-50/70 text-indigo-950'
+                }`}
+              >
+                <span
+                  className={`flex items-center gap-1.5 ${
+                    appDetail.status === 'REJECTED' ? 'font-medium text-slate-700' : 'font-bold text-indigo-950'
+                  }`}
+                >
+                  <Calendar className={`w-4 h-4 ${appDetail.status === 'REJECTED' ? 'text-slate-400' : 'text-indigo-600'}`} />
+                  {appDetail.status === 'REJECTED' ? 'Historical Interview' : 'Scheduled Interview'}: {formatDateTime(appDetail.interviewScheduledAt)}
+                </span>
+                {appDetail.status !== 'REJECTED' && appDetail.status !== 'ACCEPTED' && appDetail.status !== 'WITHDRAWN' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-indigo-700 border-indigo-300 hover:bg-indigo-100/60 text-[11px] h-7 px-2.5"
+                    onClick={() => openStatusModal(appDetail.id, 'INTERVIEW_SCHEDULED', appDetail.interviewScheduledAt)}
+                  >
+                    Reschedule
+                  </Button>
+                )}
+              </div>
+            )}
 
             {/* Resume Action */}
             {appDetail.hasResume && (
@@ -449,44 +510,91 @@ export function RecruiterATSPage() {
       {/* Transition & Interview Scheduler Modal */}
       <Modal
         isOpen={isStatusModalOpen}
-        onClose={() => setIsStatusModalOpen(false)}
-        title={`Transition Stage to: ${targetStatus.replace('_', ' ')}`}
-        description="Update candidate status in applicant tracking pipeline"
+        onClose={() => {
+          setIsStatusModalOpen(false);
+          setStatusModalError(null);
+        }}
+        title={
+          selectedApp?.status === 'REJECTED' && targetStatus === 'INTERVIEW_SCHEDULED'
+            ? 'Interview Cannot Be Rescheduled'
+            : `Transition Stage to: ${targetStatus.replace('_', ' ')}`
+        }
+        description={
+          selectedApp?.status === 'REJECTED' && targetStatus === 'INTERVIEW_SCHEDULED'
+            ? undefined
+            : 'Update candidate status in applicant tracking pipeline'
+        }
       >
-        <div className="space-y-4">
-          {targetStatus === 'INTERVIEW_SCHEDULED' && (
-            <Input
-              label="Interview Date & Time *"
-              type="datetime-local"
-              value={interviewDate}
-              onChange={(e) => setInterviewDate(e.target.value)}
+        {selectedApp?.status === 'REJECTED' && targetStatus === 'INTERVIEW_SCHEDULED' ? (
+          <div className="py-2">
+            <ErrorState
+              variant="inline"
+              title="Interview Cannot Be Rescheduled"
+              message="This candidate has been rejected, so an interview cannot be scheduled or rescheduled for this application."
+              primaryAction={{
+                label: 'Close',
+                onClick: () => {
+                  setIsStatusModalOpen(false);
+                  setStatusModalError(null);
+                },
+                variant: 'primary',
+              }}
             />
-          )}
-
-          <p className="text-xs text-slate-500">
-            Confirming this transition will automatically notify the candidate with relevant status updates.
-          </p>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setIsStatusModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                updateStatusMutation.mutate({
-                  appId: selectedAppId,
-                  status: targetStatus,
-                  interviewScheduledAt: interviewDate || undefined,
-                })
-              }
-              isLoading={updateStatusMutation.isPending}
-              disabled={targetStatus === 'INTERVIEW_SCHEDULED' && !interviewDate}
-            >
-              Confirm Transition
-            </Button>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4">
+            {statusModalError && (
+              <ErrorState
+                variant="inline"
+                error={statusModalError}
+                onRetry={() => setStatusModalError(null)}
+                retryText="Dismiss"
+              />
+            )}
+
+            {targetStatus === 'INTERVIEW_SCHEDULED' && (
+              <DateTimePicker
+                label="Interview Date & Time *"
+                value={interviewDate}
+                onChange={(val) => {
+                  setInterviewDate(val);
+                  setStatusModalError(null);
+                }}
+              />
+            )}
+
+            <p className="text-xs text-slate-500">
+              Confirming this transition will automatically notify the candidate with relevant status updates.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsStatusModalOpen(false);
+                  setStatusModalError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  updateStatusMutation.mutate({
+                    appId: selectedAppId,
+                    status: targetStatus,
+                    interviewScheduledAt: interviewDate || undefined,
+                  })
+                }
+                isLoading={updateStatusMutation.isPending}
+                disabled={targetStatus === 'INTERVIEW_SCHEDULED' && !interviewDate}
+              >
+                Confirm Transition
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -208,14 +208,18 @@ class AdminModerationServiceTest {
         assertThat(company.getVerificationStatus()).isEqualTo(CompanyVerificationStatus.VERIFIED);
         verify(notificationService).sendNotification(
                 eq(2L),
-                eq("Company Verification Approved"),
-                contains("Documentation verified"),
-                eq(NotificationType.SYSTEM_ALERT)
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Company Verified"),
+                contains("has been verified by the CareerForge Admin team"),
+                eq(NotificationType.COMPANY_VERIFIED),
+                eq("COMPANY"),
+                eq(10L)
         );
     }
 
     @Test
-    @DisplayName("Update company verification - reject status dispatches notification")
+    @DisplayName("Update company verification - reject status dispatches notification with reason")
     void testUpdateCompanyVerification_Reject() {
         CompanyVerificationUpdateRequest req = CompanyVerificationUpdateRequest.builder()
                 .verificationStatus(CompanyVerificationStatus.REJECTED)
@@ -232,9 +236,42 @@ class AdminModerationServiceTest {
         assertThat(result.getVerificationStatus()).isEqualTo(CompanyVerificationStatus.REJECTED);
         verify(notificationService).sendNotification(
                 eq(2L),
-                eq("Company Verification Updated"),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Company Verification Rejected"),
                 contains("Invalid corporate domain"),
-                eq(NotificationType.SYSTEM_ALERT)
+                eq(NotificationType.COMPANY_VERIFICATION_REJECTED),
+                eq("COMPANY"),
+                eq(10L)
+        );
+    }
+
+    @Test
+    @DisplayName("Update company verification - pending status dispatches notification")
+    void testUpdateCompanyVerification_Pending() {
+        company.setVerificationStatus(CompanyVerificationStatus.VERIFIED);
+        CompanyVerificationUpdateRequest req = CompanyVerificationUpdateRequest.builder()
+                .verificationStatus(CompanyVerificationStatus.PENDING)
+                .reason("Under re-review")
+                .build();
+
+        when(companyRepository.findById(10L)).thenReturn(Optional.of(company));
+        when(companyRepository.save(any(Company.class))).thenAnswer(i -> i.getArgument(0));
+        when(recruiterProfileRepository.findAllByCompany_Id(10L)).thenReturn(List.of(recruiterProfile));
+
+        AdminCompanySummaryResponse result = adminModerationService.updateCompanyVerification(1L, 10L, req);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getVerificationStatus()).isEqualTo(CompanyVerificationStatus.PENDING);
+        verify(notificationService).sendNotification(
+                eq(2L),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Company Verification Pending"),
+                contains("is currently pending admin verification"),
+                eq(NotificationType.COMPANY_VERIFICATION_PENDING),
+                eq("COMPANY"),
+                eq(10L)
         );
     }
 
@@ -302,9 +339,13 @@ class AdminModerationServiceTest {
 
         verify(notificationService).sendNotification(
                 eq(2L),
-                eq("Job Moderation Notice"),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Job Posting Closed"),
                 contains("Salary out of compliance"),
-                eq(NotificationType.SYSTEM_ALERT)
+                eq(NotificationType.JOB_POSTING_CLOSED),
+                eq("JOB"),
+                eq(100L)
         );
     }
 
@@ -326,6 +367,17 @@ class AdminModerationServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getStatus()).isEqualTo(JobStatus.ARCHIVED);
         assertThat(job.getStatus()).isEqualTo(JobStatus.ARCHIVED);
+
+        verify(notificationService).sendNotification(
+                eq(2L),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Job Posting Archived"),
+                contains("Fraudulent listing"),
+                eq(NotificationType.JOB_POSTING_ARCHIVED),
+                eq("JOB"),
+                eq(100L)
+        );
     }
 
     @Test
@@ -347,6 +399,17 @@ class AdminModerationServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getStatus()).isEqualTo(JobStatus.DRAFT);
         assertThat(job.getStatus()).isEqualTo(JobStatus.DRAFT);
+
+        verify(notificationService).sendNotification(
+                eq(2L),
+                eq(1L),
+                eq("CareerForge Admin"),
+                eq("Job Posting Moved to Draft"),
+                contains("Please update job requirements and resubmit"),
+                eq(NotificationType.JOB_POSTING_DRAFTED),
+                eq("JOB"),
+                eq(100L)
+        );
     }
 
     @Test

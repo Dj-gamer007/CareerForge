@@ -42,7 +42,29 @@ export function LoginPage() {
       else if (res.user.role === 'ROLE_RECRUITER') navigate('/recruiter/dashboard');
       else navigate('/student/dashboard');
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || 'Invalid email or password. Please try again.');
+      if (!err.response) {
+        setErrorMsg('Unable to connect to CareerForge. Please check your connection.');
+      } else if (err.response.status === 401) {
+        setErrorMsg(err.response.data?.message || 'Invalid email or password. Please try again.');
+      } else if (err.response.status === 403) {
+        if (err.response.data?.code === 'ACCOUNT_DISABLED') {
+          setErrorMsg('Your account has been disabled by an administrator. Please contact support for assistance.');
+        } else {
+          setErrorMsg(err.response.data?.message || 'Access denied. You do not have permission to sign in.');
+        }
+      } else if (err.response.status === 429) {
+        setErrorMsg('Too many login attempts. Please wait a moment and try again.');
+      } else if (err.response.status >= 500) {
+        if (err.response.status === 502 || err.response.status === 503) {
+          setErrorMsg('The server is temporarily unavailable. Please try again shortly.');
+        } else if (err.response.status === 504) {
+          setErrorMsg('The server took too long to respond. Please try again.');
+        } else {
+          setErrorMsg('Something went wrong on the server. Please try again later.');
+        }
+      } else {
+        setErrorMsg(err.response.data?.message || 'Authentication failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

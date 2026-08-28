@@ -44,6 +44,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 } else {
                     log.warn("User account is disabled for email: {}", email);
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType(org.springframework.http.MediaType.APPLICATION_JSON_VALUE);
+                    com.careerforge.dto.response.ErrorResponse errorResponse = com.careerforge.dto.response.ErrorResponse.builder()
+                            .status(org.springframework.http.HttpStatus.FORBIDDEN.value())
+                            .error(org.springframework.http.HttpStatus.FORBIDDEN.getReasonPhrase())
+                            .code("ACCOUNT_DISABLED")
+                            .message("Your account has been disabled by an administrator. Please contact support for assistance.")
+                            .path(request.getRequestURI())
+                            .timestamp(java.time.LocalDateTime.now())
+                            .build();
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+                    mapper.writeValue(response.getOutputStream(), errorResponse);
+                    return;
                 }
             }
         } catch (Exception ex) {

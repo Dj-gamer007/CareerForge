@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/authStore';
 import { recruiterService } from '@/services/recruiter.service';
 import { jobService } from '@/services/job.service';
 import { queryKeys } from '@/lib/queryClient';
@@ -12,21 +13,46 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { Briefcase, Building2, Plus, Users, ShieldAlert, ArrowRight } from 'lucide-react';
 
 export function RecruiterDashboardPage() {
-  const { data: company, isLoading: isCompLoading } = useQuery({
-    queryKey: queryKeys.recruiter.company,
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const userId = user?.id;
+
+  const {
+    data: company,
+    isLoading: isCompLoading,
+    isError: isCompError,
+    error: compError,
+    refetch: refetchCompany,
+  } = useQuery({
+    queryKey: queryKeys.recruiter.company(userId),
     queryFn: () => recruiterService.getMyCompany(),
+    enabled: isAuthenticated && !isAuthLoading && user?.role === 'ROLE_RECRUITER' && !!userId,
     retry: false,
+    refetchInterval: (query) => (query.state.data ? 2000 : false),
+    refetchIntervalInBackground: false,
   });
 
   const { data: jobsData, isLoading: isJobsLoading, isError: isJobsError, error: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: queryKeys.recruiter.jobs({ page: 0, size: 5 }),
     queryFn: () => jobService.getRecruiterJobs({ page: 0, size: 5 }),
-    enabled: !!company?.id,
+    enabled: isAuthenticated && !isAuthLoading && !!company?.id,
     retry: false,
+    refetchInterval: 1500,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
-  if (isCompLoading || (isJobsLoading && !!company?.id)) {
+  if (isAuthLoading || isCompLoading || (isJobsLoading && !jobsData && !!company?.id)) {
     return <LoadingSpinner text="Loading recruiter workspace..." />;
+  }
+
+  if (isCompError) {
+    return (
+      <ErrorState
+        title="Could not load recruiter workspace"
+        error={compError}
+        onRetry={() => refetchCompany()}
+      />
+    );
   }
 
   // Recruiter not yet associated with a company
@@ -95,8 +121,7 @@ export function RecruiterDashboardPage() {
   if (isJobsError) {
     return (
       <ErrorState
-        title="Could not load dashboard"
-        message={(jobsError as any)?.response?.data?.message || 'Failed to load company workspace'}
+        error={jobsError}
         onRetry={() => refetchJobs()}
       />
     );

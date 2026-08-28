@@ -42,6 +42,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     private final ResumeRepository resumeRepository;
     private final StudentSkillRepository studentSkillRepository;
     private final com.careerforge.service.AuditLogService auditLogService;
+    private final com.careerforge.service.NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -176,6 +177,31 @@ public class AdminUserServiceImpl implements AdminUserService {
         boolean previousStatus = user.isEnabled();
         user.setEnabled(request.getEnabled());
         User savedUser = userRepository.save(user);
+
+        if (previousStatus && Boolean.FALSE.equals(savedUser.isEnabled())) {
+            String reasonText = (request.getReason() != null && !request.getReason().trim().isEmpty())
+                    ? " Reason: " + request.getReason().trim() + "."
+                    : "";
+            String message;
+            if (savedUser.getRole() == Role.ROLE_STUDENT) {
+                message = "Your CareerForge student account has been disabled by the CareerForge Admin team." + reasonText;
+            } else if (savedUser.getRole() == Role.ROLE_RECRUITER) {
+                message = "Your CareerForge recruiter account has been disabled by the CareerForge Admin team." + reasonText;
+            } else {
+                message = "Your CareerForge account has been disabled by the CareerForge Admin team." + reasonText;
+            }
+
+            notificationService.sendNotification(
+                    savedUser.getId(),
+                    currentAdminId,
+                    "CareerForge Admin",
+                    "Account Disabled",
+                    message,
+                    com.careerforge.entity.enums.NotificationType.ACCOUNT_DISABLED,
+                    "USER",
+                    savedUser.getId()
+            );
+        }
 
         log.info("Admin ID: {} updated user ID: {} enabled status to: {} (Reason: {})",
                 currentAdminId, targetUserId, request.getEnabled(), request.getReason());

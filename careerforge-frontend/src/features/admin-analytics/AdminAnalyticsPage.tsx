@@ -22,6 +22,7 @@ import {
   Cell,
 } from 'recharts';
 import { BarChart3, TrendingUp, Users, Briefcase } from 'lucide-react';
+import { ErrorState } from '@/components/feedback/ErrorState';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -29,45 +30,55 @@ export function AdminAnalyticsPage() {
   const [trendsWindowDays, setTrendsWindowDays] = useState(30);
 
   // Overview Query
-  const { isLoading: isOverviewLoading } = useQuery({
+  const { isLoading: isOverviewLoading, isError: isOverviewError, error: overviewError, refetch: refetchOverview } = useQuery({
     queryKey: queryKeys.admin.analyticsOverview,
     queryFn: () => adminService.getAnalyticsOverview(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   // Funnel Query
-  const { data: funnel, isLoading: isFunnelLoading } = useQuery({
+  const { data: funnel, isLoading: isFunnelLoading, isError: isFunnelError, error: funnelError, refetch: refetchFunnel } = useQuery({
     queryKey: queryKeys.admin.analyticsFunnel(),
     queryFn: () => adminService.getAnalyticsFunnel(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // Job Analytics Query
-  const { data: jobAnalytics, isLoading: isJobsLoading } = useQuery({
+  const { data: jobAnalytics, isLoading: isJobsLoading, isError: isJobsError, error: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: queryKeys.admin.analyticsJobs(),
     queryFn: () => adminService.getAnalyticsJobs(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // Company Analytics Query
-  const { isLoading: isCompsLoading } = useQuery({
+  const { isLoading: isCompsLoading, isError: isCompsError, error: compsError, refetch: refetchComps } = useQuery({
     queryKey: queryKeys.admin.analyticsCompanies,
     queryFn: () => adminService.getAnalyticsCompanies(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   // User Analytics Query
-  const { data: userAnalytics, isLoading: isUsersLoading } = useQuery({
+  const { data: userAnalytics, isLoading: isUsersLoading, isError: isUsersError, error: usersError, refetch: refetchUsers } = useQuery({
     queryKey: queryKeys.admin.analyticsUsers,
     queryFn: () => adminService.getAnalyticsUsers(),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   // Trends Query
-  const { data: trends, isLoading: isTrendsLoading } = useQuery({
+  const { data: trends, isLoading: isTrendsLoading, isError: isTrendsError, error: trendsError, refetch: refetchTrends } = useQuery({
     queryKey: queryKeys.admin.analyticsTrends(trendsWindowDays),
     queryFn: () => adminService.getAnalyticsTrends(trendsWindowDays),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const isLoading =
@@ -78,7 +89,26 @@ export function AdminAnalyticsPage() {
     isUsersLoading ||
     isTrendsLoading;
 
+  const isAnyError = isOverviewError || isFunnelError || isJobsError || isCompsError || isUsersError || isTrendsError;
+  const activeError = funnelError || jobsError || usersError || overviewError || compsError || trendsError;
+
   if (isLoading && !funnel) return <LoadingSpinner text="Aggregating platform metrics and time-series trends..." />;
+
+  if (isAnyError && !funnel) {
+    return (
+      <ErrorState
+        error={activeError}
+        onRetry={() => {
+          refetchOverview();
+          refetchFunnel();
+          refetchJobs();
+          refetchComps();
+          refetchUsers();
+          refetchTrends();
+        }}
+      />
+    );
+  }
 
   // Prepare Funnel Data
   const funnelChartData = funnel

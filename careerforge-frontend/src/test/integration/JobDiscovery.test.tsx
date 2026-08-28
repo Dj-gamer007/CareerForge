@@ -43,6 +43,22 @@ const mockJobs = [
     experienceLevel: 'ENTRY_LEVEL',
     skills: [{ id: 3, skillName: 'Python', isRequired: true }],
   },
+  {
+    id: 4,
+    title: 'Cloud Infrastructure Engineer',
+    slug: 'cloud-infrastructure-engineer',
+    companyId: 40,
+    companyName: 'ScaleStack Cloud',
+    location: 'Hyderabad, India',
+    workMode: 'HYBRID',
+    jobType: 'FULL_TIME',
+    experienceLevel: 'MID_LEVEL',
+    skills: [
+      { id: 1, skillName: 'Java', isRequired: true },
+      { id: 5, skillName: 'Docker', isRequired: false },
+      { id: 3, skillName: 'MySQL', isRequired: false },
+    ],
+  },
 ];
 
 let apiCallsCount = 0;
@@ -61,7 +77,10 @@ const server = setupServer(
 
     if (keyword) {
       filtered = filtered.filter(
-        (j) => j.title.toLowerCase().includes(keyword) || j.companyName.toLowerCase().includes(keyword)
+        (j) =>
+          j.title.toLowerCase().includes(keyword) ||
+          j.companyName.toLowerCase().includes(keyword) ||
+          j.skills?.some((s: any) => s.skillName.toLowerCase().includes(keyword))
       );
     }
 
@@ -307,6 +326,32 @@ describe('Job Discovery Tabs & Filter Synchronization Integration', () => {
     await waitFor(() => {
       expect(screen.getByText('Search for your next opportunity')).toBeInTheDocument();
       expect(screen.queryByText('Java Backend Developer')).not.toBeInTheDocument();
+    });
+  });
+
+  it('searches jobs by optional skills like Docker and MySQL via general keyword search box', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <JobDiscoveryPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    // Search for optional skill "Docker"
+    const searchInput = screen.getByPlaceholderText(/job title, keywords, or skills/i);
+    fireEvent.change(searchInput, { target: { value: 'Docker' } });
+    const allSearchButtons = screen.getAllByRole('button', { name: /search jobs/i });
+    const submitBtn = allSearchButtons.find((b) => b.getAttribute('type') === 'submit') || allSearchButtons[1];
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Cloud Infrastructure Engineer')).toBeInTheDocument();
+      expect(screen.queryByText('Python Data Science Intern')).not.toBeInTheDocument();
     });
   });
 });

@@ -13,6 +13,8 @@ import com.careerforge.exception.UnauthorizedException;
 import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.JobRepository;
 import com.careerforge.repository.RecruiterProfileRepository;
+import com.careerforge.repository.UserRepository;
+import com.careerforge.service.NotificationService;
 import com.careerforge.service.impl.CompanyServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +24,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +43,10 @@ class CompanyServiceTest {
     private RecruiterService recruiterService;
     @Mock
     private JobRepository jobRepository;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private CompanyServiceImpl companyService;
@@ -77,8 +84,9 @@ class CompanyServiceTest {
     }
 
     @Test
-    @DisplayName("Should create company with PENDING status and assign recruiter as admin")
+    @DisplayName("Should create company with PENDING status and notify admins")
     void testCreateCompany_Success() {
+        User admin = User.builder().id(1L).email("admin@careerforge.local").role(Role.ROLE_ADMIN).enabled(true).build();
         CompanyCreateRequest request = CompanyCreateRequest.builder()
                 .name("Acme Corporation")
                 .industry("Technology")
@@ -94,6 +102,7 @@ class CompanyServiceTest {
             c.setId(100L);
             return c;
         });
+        when(userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_ADMIN)).thenReturn(List.of(admin));
 
         CompanyResponse response = companyService.createCompany(2L, request);
 
@@ -107,6 +116,12 @@ class CompanyServiceTest {
         assertThat(recruiterProfile.getCompany().getName()).isEqualTo("Acme Corporation");
         assertThat(recruiterProfile.getCompany().getVerificationStatus()).isEqualTo(CompanyVerificationStatus.PENDING);
         verify(recruiterProfileRepository).save(recruiterProfile);
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq("New Company Pending Verification"),
+                contains("Acme Corporation"),
+                eq(com.careerforge.entity.enums.NotificationType.SYSTEM_ALERT)
+        );
     }
 
     @Test
@@ -169,6 +184,30 @@ class CompanyServiceTest {
         when(companyRepository.findById(100L)).thenReturn(Optional.of(testCompany));
 
         CompanyResponse response = companyService.getCompanyById(100L);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(100L);
+        assertThat(response.getName()).isEqualTo("Acme Corporation");
+    }
+
+    @Test
+    @DisplayName("Should return null when recruiter has no associated company")
+    void testGetMyCompany_NoCompany_ReturnsNull() {
+        recruiterProfile.setCompany(null);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+
+        CompanyResponse response = companyService.getMyCompany(2L);
+
+        assertThat(response).isNull();
+    }
+
+    @Test
+    @DisplayName("Should return company response when recruiter has an associated company")
+    void testGetMyCompany_WithCompany_ReturnsResponse() {
+        recruiterProfile.setCompany(testCompany);
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+
+        CompanyResponse response = companyService.getMyCompany(2L);
 
         assertThat(response).isNotNull();
         assertThat(response.getId()).isEqualTo(100L);

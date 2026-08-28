@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import axios from 'axios';
 import { UserSummary } from '@/types/auth.types';
 import { storage } from '@/lib/storage';
+import { queryClient } from '@/lib/queryClient';
 
 interface AuthState {
   accessToken: string | null;
@@ -9,6 +10,9 @@ interface AuthState {
   user: UserSummary | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isInitialized: boolean;
+  isAccountDisabled: boolean;
+  disabledMessage: string | null;
 
   setAuth: (
     accessToken: string,
@@ -25,21 +29,26 @@ interface AuthState {
 
   logout: () => void;
 
+  setDisabled: (disabled: boolean, message?: string) => void;
+
   initSession: () => Promise<void>;
 }
 
+const initialRefreshToken = storage.getRefreshToken();
+const initialUser = storage.getUser<UserSummary>();
+
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
-
-  refreshToken: storage.getRefreshToken(),
-
-  user: storage.getUser<UserSummary>(),
-
-  isAuthenticated: !!storage.getRefreshToken(),
-
-  isLoading: true,
+  refreshToken: initialRefreshToken,
+  user: initialUser,
+  isAuthenticated: false,
+  isLoading: !!initialRefreshToken,
+  isInitialized: !initialRefreshToken,
+  isAccountDisabled: false,
+  disabledMessage: null,
 
   setAuth: (accessToken, refreshToken, user) => {
+    queryClient.clear();
     storage.setRefreshToken(refreshToken);
     storage.setUser(user);
 
@@ -49,7 +58,32 @@ export const useAuthStore = create<AuthState>((set) => ({
       user,
       isAuthenticated: true,
       isLoading: false,
+      isInitialized: true,
+      isAccountDisabled: false,
+      disabledMessage: null,
     });
+  },
+
+  setDisabled: (disabled, message) => {
+    if (disabled) {
+      storage.clearAuth();
+      queryClient.clear();
+      set({
+        accessToken: null,
+        refreshToken: null,
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        isInitialized: true,
+        isAccountDisabled: true,
+        disabledMessage: message || 'Your account has been disabled by an administrator. Please contact support for assistance.',
+      });
+    } else {
+      set({
+        isAccountDisabled: false,
+        disabledMessage: null,
+      });
+    }
   },
 
   setTokens: (accessToken, refreshToken) => {
@@ -72,6 +106,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     storage.clearAuth();
+    queryClient.clear();
 
     set({
       accessToken: null,
@@ -79,6 +114,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      isInitialized: true,
     });
   },
 
@@ -94,6 +130,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         user,
         isAuthenticated: false,
         isLoading: false,
+        isInitialized: true,
       });
 
       return;
@@ -122,6 +159,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         user,
         isAuthenticated: true,
         isLoading: false,
+        isInitialized: true,
       });
 
       console.log('CareerForge session restored successfully');
@@ -129,6 +167,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       console.error('CareerForge session restoration failed:', error);
 
       storage.clearAuth();
+      queryClient.clear();
 
       set({
         accessToken: null,
@@ -136,6 +175,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: null,
         isAuthenticated: false,
         isLoading: false,
+        isInitialized: true,
       });
     }
   },

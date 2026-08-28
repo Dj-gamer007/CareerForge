@@ -2,8 +2,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/features/auth/authStore';
 import { NotificationBell } from '@/features/notifications/NotificationBell';
 import { Button } from '@/components/ui/Button';
-import { Briefcase, User, LogOut } from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 import { authService } from '@/services/auth.service';
+import { CareerForgeIcon } from '@/components/brand/CareerForgeIcon';
 
 export function Navbar() {
   const { user, isAuthenticated, logout, refreshToken } = useAuthStore();
@@ -41,9 +42,7 @@ export function Navbar() {
         {/* Brand */}
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center gap-2.5 font-bold text-xl text-slate-900 tracking-tight">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm shadow-indigo-200">
-              <Briefcase className="w-5 h-5" />
-            </div>
+            <CareerForgeIcon />
             <span>Career<span className="text-indigo-600">Forge</span></span>
           </Link>
 

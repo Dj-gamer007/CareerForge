@@ -49,7 +49,8 @@ export function AdminAuditLogsPage() {
         dateTo: dateTo ? `${dateTo}T23:59:59` : undefined,
       }),
     placeholderData: (previousData) => previousData,
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: logDetail, isLoading: isDetailLoading } = useQuery({
@@ -57,6 +58,7 @@ export function AdminAuditLogsPage() {
     queryFn: () => adminService.getAuditLogById(selectedLog!.id),
     enabled: isDetailModalOpen && !!selectedLog?.id,
     refetchInterval: isDetailModalOpen && !!selectedLog?.id ? 2500 : false,
+    refetchIntervalInBackground: false,
   });
 
   const openDetailModal = (log: AuditLogSummaryResponse) => {
@@ -68,8 +70,7 @@ export function AdminAuditLogsPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load audit trail"
-        message={(error as any)?.response?.data?.message || 'Failed to retrieve audit log records'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -211,11 +212,11 @@ export function AdminAuditLogsPage() {
         </CardContent>
         {auditData && (
           <PaginationControls
-            currentPage={auditData.number}
+            currentPage={auditData.page ?? auditData.number ?? 0}
             totalPages={auditData.totalPages}
             totalElements={auditData.totalElements}
             pageSize={auditData.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         )}
       </Card>

@@ -4,6 +4,7 @@ import com.careerforge.dto.request.AdminJobModerationRequest;
 import com.careerforge.dto.request.CompanyVerificationUpdateRequest;
 import com.careerforge.dto.response.*;
 import com.careerforge.entity.*;
+import com.careerforge.entity.enums.ApplicationStatus;
 import com.careerforge.entity.enums.CompanyVerificationStatus;
 import com.careerforge.entity.enums.JobStatus;
 import com.careerforge.entity.enums.JobType;
@@ -148,17 +149,38 @@ public class AdminModerationServiceImpl implements AdminModerationService {
 
         // Notify recruiters of this company
         List<RecruiterProfile> recruiters = recruiterProfileRepository.findAllByCompany_Id(companyId);
-        String title = "Company Verification " + (request.getVerificationStatus() == CompanyVerificationStatus.VERIFIED ? "Approved" : "Updated");
-        String message = String.format("Your company '%s' verification status has been updated to %s. Reason: %s",
-                company.getName(), request.getVerificationStatus(), request.getReason());
+        String title;
+        String message;
+        NotificationType notifType;
+
+        if (request.getVerificationStatus() == CompanyVerificationStatus.VERIFIED) {
+            title = "Company Verified";
+            message = String.format("Your company '%s' has been verified by the CareerForge Admin team.", company.getName());
+            notifType = NotificationType.COMPANY_VERIFIED;
+        } else if (request.getVerificationStatus() == CompanyVerificationStatus.REJECTED) {
+            title = "Company Verification Rejected";
+            String reasonText = (request.getReason() != null && !request.getReason().trim().isEmpty())
+                    ? " Reason: " + request.getReason().trim() + "."
+                    : "";
+            message = String.format("Your company '%s' verification was rejected by the CareerForge Admin team.%s", company.getName(), reasonText);
+            notifType = NotificationType.COMPANY_VERIFICATION_REJECTED;
+        } else {
+            title = "Company Verification Pending";
+            message = String.format("Your company '%s' is currently pending admin verification.", company.getName());
+            notifType = NotificationType.COMPANY_VERIFICATION_PENDING;
+        }
 
         for (RecruiterProfile recruiter : recruiters) {
             if (recruiter.getUser() != null) {
                 notificationService.sendNotification(
                         recruiter.getUser().getId(),
+                        adminUserId,
+                        "CareerForge Admin",
                         title,
                         message,
-                        NotificationType.SYSTEM_ALERT
+                        notifType,
+                        "COMPANY",
+                        companyId
                 );
             }
         }
@@ -373,16 +395,66 @@ public class AdminModerationServiceImpl implements AdminModerationService {
 
         // Notify recruiter of this job
         if (job.getRecruiter() != null && job.getRecruiter().getUser() != null) {
-            String title = "Job Moderation Notice";
-            String message = String.format("Your job '%s' status has been changed to %s by an administrator. Reason: %s",
-                    job.getTitle(), target, request.getReason());
+            String title;
+            String message;
+            NotificationType notifType;
+            String reasonText = (request.getReason() != null && !request.getReason().trim().isEmpty())
+                    ? " Reason: " + request.getReason().trim() + "."
+                    : "";
+
+            if (target == JobStatus.CLOSED) {
+                title = "Job Posting Closed";
+                message = String.format("Your job posting '%s' has been closed by the CareerForge Admin team.%s", job.getTitle(), reasonText);
+                notifType = NotificationType.JOB_POSTING_CLOSED;
+            } else if (target == JobStatus.DRAFT) {
+                title = "Job Posting Moved to Draft";
+                message = String.format("Your job posting '%s' has been moved to draft by the CareerForge Admin team.%s", job.getTitle(), reasonText);
+                notifType = NotificationType.JOB_POSTING_DRAFTED;
+            } else if (target == JobStatus.ARCHIVED) {
+                title = "Job Posting Archived";
+                message = String.format("Your job posting '%s' has been archived by the CareerForge Admin team.%s", job.getTitle(), reasonText);
+                notifType = NotificationType.JOB_POSTING_ARCHIVED;
+            } else if (target == JobStatus.PUBLISHED) {
+                title = "Job Posting Published";
+                message = String.format("Your job posting '%s' has been published by the CareerForge Admin team.%s", job.getTitle(), reasonText);
+                notifType = NotificationType.JOB_POSTING_PUBLISHED;
+            } else {
+                title = "Job Moderation Notice";
+                message = String.format("Your job '%s' status has been changed to %s by an administrator.%s", job.getTitle(), target, reasonText);
+                notifType = NotificationType.SYSTEM_ALERT;
+            }
 
             notificationService.sendNotification(
                     job.getRecruiter().getUser().getId(),
+                    adminUserId,
+                    "CareerForge Admin",
                     title,
                     message,
-                    NotificationType.SYSTEM_ALERT
+                    notifType,
+                    "JOB",
+                    jobId
             );
+        }
+
+        // Notify active candidates who applied for this job if closed or archived
+        if (target == JobStatus.CLOSED || target == JobStatus.ARCHIVED) {
+            List<com.careerforge.entity.Application> candidateApps = applicationRepository.findAllByJob(saved);
+            for (com.careerforge.entity.Application app : candidateApps) {
+                if (app.getStatus() != ApplicationStatus.WITHDRAWN && app.getStudentProfile() != null && app.getStudentProfile().getUser() != null) {
+                    notificationService.sendNotification(
+                            app.getStudentProfile().getUser().getId(),
+                            adminUserId,
+                            "CareerForge Admin",
+                            target == JobStatus.CLOSED ? "Job Closed" : "Job Archived",
+                            target == JobStatus.CLOSED
+                                    ? "The job '" + saved.getTitle() + "' at " + saved.getCompany().getName() + " is currently closed."
+                                    : "The job '" + saved.getTitle() + "' at " + saved.getCompany().getName() + " has been archived.",
+                            target == JobStatus.CLOSED ? NotificationType.JOB_POSTING_CLOSED : NotificationType.JOB_POSTING_ARCHIVED,
+                            "JOB",
+                            saved.getId()
+                    );
+                }
+            }
         }
 
         log.info("Admin ID: {} moderated job ID: {} from {} to {} (Reason: {})",

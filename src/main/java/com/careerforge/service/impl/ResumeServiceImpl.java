@@ -138,24 +138,19 @@ public class ResumeServiceImpl implements ResumeService {
 
         boolean wasActive = resume.isActive();
 
-        // 1. Resolve any student applications referencing this resume to avoid FK constraint violations
+        // 1. Resolve any student applications referencing this resume to preserve application lifecycle history
         List<Application> linkedApplications = applicationRepository.findAllByResume(resume);
         if (!linkedApplications.isEmpty()) {
             List<Resume> remaining = resumeRepository.findAllByStudentProfileOrderByUploadedAtDesc(profile)
                     .stream()
                     .filter(r -> !r.getId().equals(resumeId))
                     .toList();
-            if (!remaining.isEmpty()) {
-                Resume fallbackResume = remaining.get(0);
-                for (Application app : linkedApplications) {
-                    app.setResume(fallbackResume);
-                }
-                applicationRepository.saveAll(linkedApplications);
-                applicationRepository.flush();
-            } else {
-                applicationRepository.deleteAll(linkedApplications);
-                applicationRepository.flush();
+            Resume fallbackResume = !remaining.isEmpty() ? remaining.get(0) : null;
+            for (Application app : linkedApplications) {
+                app.setResume(fallbackResume);
             }
+            applicationRepository.saveAll(linkedApplications);
+            applicationRepository.flush();
         }
 
         // 2. Delete resume metadata

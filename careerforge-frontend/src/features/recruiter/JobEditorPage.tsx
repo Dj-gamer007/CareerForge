@@ -76,7 +76,8 @@ export function JobEditorPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.jobs() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.publicJobs.list() });
+      queryClient.invalidateQueries({ queryKey: ['public', 'jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['student', 'match-preview'] });
       navigate('/recruiter/jobs');
     },
     onError: (err: any) => {

@@ -46,7 +46,8 @@ export function AdminCompaniesPage() {
         status: statusFilter ? (statusFilter as CompanyVerificationStatus) : undefined,
       }),
     placeholderData: (previousData) => previousData,
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: companyDetail, isLoading: isDetailLoading } = useQuery({
@@ -54,6 +55,7 @@ export function AdminCompaniesPage() {
     queryFn: () => adminService.getCompanyById(selectedCompany!.id),
     enabled: isDetailModalOpen && !!selectedCompany?.id,
     refetchInterval: isDetailModalOpen && !!selectedCompany?.id ? 2500 : false,
+    refetchIntervalInBackground: false,
   });
 
   const verifyMutation = useMutation({
@@ -90,8 +92,7 @@ export function AdminCompaniesPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load companies"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch company verification records'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -207,11 +208,11 @@ export function AdminCompaniesPage() {
         </CardContent>
         {companiesData && (
           <PaginationControls
-            currentPage={companiesData.number}
+            currentPage={companiesData.page ?? companiesData.number ?? 0}
             totalPages={companiesData.totalPages}
             totalElements={companiesData.totalElements}
             pageSize={companiesData.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         )}
       </Card>

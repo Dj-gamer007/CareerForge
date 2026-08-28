@@ -30,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -52,6 +55,7 @@ public class ApplicationServiceImpl implements ApplicationService {
     private final NotificationService notificationService;
     private final StorageService storageService;
     private final ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
+    private final UserRepository userRepository;
 
     // ==========================================
     // Student Operations
@@ -252,6 +256,25 @@ public class ApplicationServiceImpl implements ApplicationService {
                 NotificationType.APPLICATION_UPDATE
         );
 
+        // Notify recruiter owning the job
+        if (saved.getJob() != null && saved.getJob().getRecruiter() != null && saved.getJob().getRecruiter().getUser() != null) {
+            String candidateName = ((studentProfile.getFirstName() != null ? studentProfile.getFirstName() : "") + " "
+                    + (studentProfile.getLastName() != null ? studentProfile.getLastName() : "")).trim();
+            if (candidateName.isEmpty()) {
+                candidateName = "Candidate";
+            }
+            notificationService.sendNotification(
+                    saved.getJob().getRecruiter().getUser().getId(),
+                    userId,
+                    candidateName,
+                    "Candidate Application Withdrawn",
+                    "Candidate " + candidateName + " has withdrawn their application for '" + saved.getJob().getTitle() + "'.",
+                    NotificationType.APPLICATION_UPDATE,
+                    "APPLICATION",
+                    saved.getId()
+            );
+        }
+
         return mapToStudentResponse(saved);
     }
 
@@ -368,25 +391,131 @@ public class ApplicationServiceImpl implements ApplicationService {
 
         // Notify candidate
         Long candidateUserId = application.getStudentProfile().getUser().getId();
+        String recruiterName = (recruiter.getFirstName() + " " + recruiter.getLastName()).trim();
+        String candidateName = (application.getStudentProfile().getFirstName() + " " + application.getStudentProfile().getLastName()).trim();
+        String jobTitle = application.getJob().getTitle();
+        String companyName = application.getJob().getCompany().getName();
+
         if (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED) {
-            String formattedInterviewTime = application.getInterviewScheduledAt() != null
-                    ? application.getInterviewScheduledAt().format(DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' h:mm a", Locale.ENGLISH))
-                    : "TBD";
+            String formattedInterviewTime = "TBD";
+            if (application.getInterviewScheduledAt() != null) {
+                // Application timestamps are stored in UTC; convert to canonical display zone (Asia/Kolkata)
+                ZonedDateTime istZoned = application.getInterviewScheduledAt()
+                        .atZone(ZoneOffset.UTC)
+                        .withZoneSameInstant(ZoneId.of("Asia/Kolkata"));
+                formattedInterviewTime = istZoned.format(DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' h:mm a", Locale.ENGLISH));
+            }
+
+            if (currentStatus == ApplicationStatus.INTERVIEW_SCHEDULED) {
+                // Interview Rescheduled
+                notificationService.sendNotification(
+                        candidateUserId,
+                        userId,
+                        recruiterName,
+                        "Interview Rescheduled",
+                        "Your interview for '" + jobTitle + "' at " + companyName + " has been rescheduled to " + formattedInterviewTime + ".",
+                        NotificationType.INTERVIEW_RESCHEDULED,
+                        "APPLICATION",
+                        saved.getId()
+                );
+            } else {
+                // First interview scheduling
+                notificationService.sendNotification(
+                        candidateUserId,
+                        userId,
+                        recruiterName,
+                        "Interview Scheduled",
+                        "Congratulations! An interview has been scheduled for '" + jobTitle + "' at " + companyName + " on " + formattedInterviewTime + ".",
+                        NotificationType.INTERVIEW_INVITE,
+                        "APPLICATION",
+                        saved.getId()
+                );
+            }
+        } else if (targetStatus == ApplicationStatus.SHORTLISTED) {
             notificationService.sendNotification(
                     candidateUserId,
-                    "Interview Invitation: " + application.getJob().getTitle(),
-                    "Congratulations! An interview has been scheduled for '" + application.getJob().getTitle() +
-                            "' at " + application.getJob().getCompany().getName() + " on " + formattedInterviewTime + ".",
-                    NotificationType.INTERVIEW_INVITE
+                    userId,
+                    recruiterName,
+                    "Application Shortlisted",
+                    "Your application for '" + jobTitle + "' at " + companyName + " has been shortlisted by the hiring team.",
+                    NotificationType.APPLICATION_SHORTLISTED,
+                    "APPLICATION",
+                    saved.getId()
+            );
+        } else if (targetStatus == ApplicationStatus.ACCEPTED) {
+            notificationService.sendNotification(
+                    candidateUserId,
+                    userId,
+                    recruiterName,
+                    "Application Accepted",
+                    "Congratulations! Your application for '" + jobTitle + "' at " + companyName + " has been accepted.",
+                    NotificationType.APPLICATION_ACCEPTED,
+                    "APPLICATION",
+                    saved.getId()
+            );
+        } else if (targetStatus == ApplicationStatus.REJECTED) {
+            notificationService.sendNotification(
+                    candidateUserId,
+                    userId,
+                    recruiterName,
+                    "Application Rejected",
+                    "Your application for '" + jobTitle + "' at " + companyName + " was not selected by the hiring team.",
+                    NotificationType.APPLICATION_REJECTED,
+                    "APPLICATION",
+                    saved.getId()
             );
         } else {
             notificationService.sendNotification(
                     candidateUserId,
-                    "Application Update: " + application.getJob().getTitle(),
-                    "Your application status for '" + application.getJob().getTitle() + "' at " +
-                            application.getJob().getCompany().getName() + " is now " + targetStatus + ".",
-                    NotificationType.APPLICATION_UPDATE
+                    userId,
+                    recruiterName,
+                    "Application Updated",
+                    "Recruiter updated your application for '" + jobTitle + "' at " + companyName + ".",
+                    NotificationType.APPLICATION_UPDATED,
+                    "APPLICATION",
+                    saved.getId()
             );
+        }
+
+        // Notify active admins of recruiter application lifecycle change
+        List<User> activeAdmins = userRepository.findAllByRoleAndEnabledTrue(com.careerforge.entity.enums.Role.ROLE_ADMIN);
+        String adminTitle;
+        String adminMessage;
+        if (targetStatus == ApplicationStatus.REJECTED) {
+            adminTitle = "Application Rejected by Recruiter";
+            adminMessage = String.format("Recruiter '%s' rejected the application of '%s' for '%s' at '%s'.",
+                    recruiterName, candidateName, jobTitle, companyName);
+        } else if (targetStatus == ApplicationStatus.ACCEPTED) {
+            adminTitle = "Application Accepted by Recruiter";
+            adminMessage = String.format("Recruiter '%s' accepted the application of '%s' for '%s' at '%s'.",
+                    recruiterName, candidateName, jobTitle, companyName);
+        } else if (targetStatus == ApplicationStatus.SHORTLISTED) {
+            adminTitle = "Application Shortlisted by Recruiter";
+            adminMessage = String.format("Recruiter '%s' shortlisted the application of '%s' for '%s' at '%s'.",
+                    recruiterName, candidateName, jobTitle, companyName);
+        } else if (targetStatus == ApplicationStatus.INTERVIEW_SCHEDULED) {
+            adminTitle = "Interview Scheduled by Recruiter";
+            adminMessage = String.format("Recruiter '%s' scheduled an interview for '%s' for '%s' at '%s'.",
+                    recruiterName, candidateName, jobTitle, companyName);
+        } else {
+            adminTitle = "Application Updated by Recruiter";
+            adminMessage = String.format("Recruiter '%s' updated the application of '%s' for '%s' at '%s'.",
+                    recruiterName, candidateName, jobTitle, companyName);
+        }
+
+        for (User admin : activeAdmins) {
+            if (!admin.getId().equals(userId)) {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        userId,
+                        recruiterName,
+                        adminTitle,
+                        adminMessage,
+                        NotificationType.APPLICATION_UPDATED,
+                        "APPLICATION",
+                        saved.getId()
+                );
+            }
         }
 
         SkillMatchResponse liveMatch = skillMatchingService.calculateMatchForStudentAndJob(
@@ -405,6 +534,42 @@ public class ApplicationServiceImpl implements ApplicationService {
         application.setRecruiterNotes(request.getRecruiterNotes() != null ? request.getRecruiterNotes().trim() : "");
         Application saved = applicationRepository.save(application);
         log.info("Updated recruiter notes for application ID: {} by user ID: {}", applicationId, userId);
+
+        String recruiterName = (recruiter.getFirstName() + " " + recruiter.getLastName()).trim();
+        String candidateName = (saved.getStudentProfile().getFirstName() + " " + saved.getStudentProfile().getLastName()).trim();
+        String jobTitle = saved.getJob().getTitle();
+        String companyName = saved.getJob().getCompany().getName();
+
+        // Notify candidate of update
+        Long candidateUserId = saved.getStudentProfile().getUser().getId();
+        notificationService.sendNotification(
+                candidateUserId,
+                userId,
+                recruiterName,
+                "Application Updated",
+                "Recruiter updated your application for '" + jobTitle + "' at " + companyName + ".",
+                NotificationType.APPLICATION_UPDATED,
+                "APPLICATION",
+                saved.getId()
+        );
+
+        // Notify active admins
+        List<User> activeAdmins = userRepository.findAllByRoleAndEnabledTrue(com.careerforge.entity.enums.Role.ROLE_ADMIN);
+        for (User admin : activeAdmins) {
+            if (!admin.getId().equals(userId)) {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        userId,
+                        recruiterName,
+                        "Application Updated by Recruiter",
+                        String.format("Recruiter '%s' updated the application of '%s' for '%s' at '%s'.",
+                                recruiterName, candidateName, jobTitle, companyName),
+                        NotificationType.APPLICATION_UPDATED,
+                        "APPLICATION",
+                        saved.getId()
+                );
+            }
+        }
 
         SkillMatchResponse liveMatch = skillMatchingService.calculateMatchForStudentAndJob(
                 saved.getStudentProfile().getId(), saved.getJob().getId());
@@ -480,6 +645,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .jobId(job.getId())
                 .jobTitle(job.getTitle())
                 .jobSlug(job.getSlug())
+                .jobStatus(job.getStatus())
                 .companyId(job.getCompany().getId())
                 .companyName(job.getCompany().getName())
                 .companyLogoUrl(job.getCompany().getLogoUrl())
@@ -507,6 +673,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .jobTitle(job.getTitle())
                 .jobSlug(job.getSlug())
                 .jobDescription(job.getDescription())
+                .jobStatus(job.getStatus())
                 .companyId(job.getCompany().getId())
                 .companyName(job.getCompany().getName())
                 .companyLogoUrl(job.getCompany().getLogoUrl())

@@ -98,6 +98,14 @@ apiClient.interceptors.response.use(
       }
     }
 
+    if (error.response?.status === 403) {
+      const data = error.response.data as any;
+      if (data?.code === 'ACCOUNT_DISABLED') {
+        useAuthStore.getState().setDisabled(true, data.message);
+        return Promise.reject(error);
+      }
+    }
+
     return Promise.reject(error);
   }
 );

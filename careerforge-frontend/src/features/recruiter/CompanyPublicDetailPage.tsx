@@ -69,8 +69,9 @@ export function CompanyPublicDetailPage() {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
         <ErrorState
-          title="Company Not Found"
-          message={(error as any)?.response?.data?.message || 'This company profile is not accessible.'}
+          error={error}
+          title={!company && !error ? 'Company Not Found' : undefined}
+          message={!company && !error ? 'This company profile is not accessible.' : undefined}
         />
       </div>
     );

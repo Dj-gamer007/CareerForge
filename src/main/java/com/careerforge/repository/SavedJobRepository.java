@@ -24,5 +24,9 @@ public interface SavedJobRepository extends JpaRepository<SavedJob, Long> {
     @Modifying
     void deleteByStudentProfile_IdAndJob_Id(Long studentProfileId, Long jobId);
 
+    @Modifying
+    @org.springframework.data.jpa.repository.Query("DELETE FROM SavedJob sj WHERE sj.job = :job")
+    void deleteAllByJob(@org.springframework.data.repository.query.Param("job") com.careerforge.entity.Job job);
+
     long countByStudentProfile_Id(Long studentProfileId);
 }

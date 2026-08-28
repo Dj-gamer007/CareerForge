@@ -31,6 +31,8 @@ export function StudentApplicationsPage() {
         status: statusFilter ? (statusFilter as ApplicationStatus) : undefined,
       }),
     refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const withdrawMutation = useMutation({
@@ -45,8 +47,7 @@ export function StudentApplicationsPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load applications"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch application records'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -97,6 +98,16 @@ export function StudentApplicationsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-base font-bold text-slate-900">{app.jobTitle}</h3>
                         <Badge variant={getStatusBadgeVariant(app.status)}>{app.status.replace('_', ' ')}</Badge>
+                        {app.jobStatus === 'CLOSED' && (
+                          <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 font-medium">
+                            Job Closed
+                          </Badge>
+                        )}
+                        {app.jobStatus === 'ARCHIVED' && (
+                          <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 font-medium">
+                            Job Archived
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
@@ -159,11 +170,11 @@ export function StudentApplicationsPage() {
           </div>
 
           <PaginationControls
-            currentPage={data.number}
+            currentPage={data.page ?? data.number ?? 0}
             totalPages={data.totalPages}
             totalElements={data.totalElements}
             pageSize={data.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         </div>
       )}

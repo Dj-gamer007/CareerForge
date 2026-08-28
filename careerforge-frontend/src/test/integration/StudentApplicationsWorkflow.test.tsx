@@ -130,4 +130,54 @@ describe('Student Applications Page & Timeline Modal Integration', () => {
       expect(screen.getByText('Profile looks promising')).toBeInTheDocument();
     });
   });
+
+  it('displays interview scheduled date and time formatted in user timezone on application card', async () => {
+    server.use(
+      http.get('/api/v1/students/applications', () => {
+        return HttpResponse.json({
+          success: true,
+          message: 'Applications retrieved',
+          data: {
+            content: [
+              {
+                id: 102,
+                jobId: 202,
+                jobTitle: 'Senior Java Developer',
+                jobSlug: 'senior-java-developer',
+                companyId: 50,
+                companyName: 'Delite Works',
+                status: 'INTERVIEW_SCHEDULED',
+                matchScoreAtApplication: 98.0,
+                appliedAt: '2026-08-20T10:00:00Z',
+                interviewScheduledAt: '2026-08-28T12:47:00Z', // 12:47 UTC = 6:17 PM IST (+5:30)
+              },
+            ],
+            totalElements: 1,
+            totalPages: 1,
+            size: 10,
+            number: 0,
+          },
+        });
+      })
+    );
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <StudentApplicationsPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Senior Java Developer')).toBeInTheDocument();
+      expect(screen.getByText('Delite Works')).toBeInTheDocument();
+      expect(screen.getByText(/Interview Scheduled:/i)).toBeInTheDocument();
+      expect(screen.getByText(/Aug 28, 2026/i)).toBeInTheDocument();
+    });
+  });
 });

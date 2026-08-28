@@ -10,6 +10,7 @@ import com.careerforge.entity.Skill;
 import com.careerforge.entity.User;
 import com.careerforge.entity.enums.*;
 import com.careerforge.repository.CompanyRepository;
+import com.careerforge.repository.NotificationRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.UserRepository;
 import com.careerforge.security.JwtTokenProvider;
@@ -66,6 +67,9 @@ class JobManagementIntegrationTest {
 
     @Autowired
     private CompanyRepository companyRepository;
+
+    @Autowired
+    private NotificationRepository notificationRepository;
 
     private String recruiterToken;
     private String otherRecruiterToken;
@@ -344,8 +348,174 @@ class JobManagementIntegrationTest {
 
         // Attempting to publish must fail with 400
         mockMvc.perform(patch("/api/v1/recruiters/jobs/" + createdJob.getId() + "/publish")
+                .header("Authorization", recruiterToken))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message", containsString("at least one required skill")));
+    }
+
+    @Test
+    @DisplayName("Job publication notifies students only, persists in db, and avoids duplicate notifications")
+    void testJobPublicationNotifications_StudentOnly_Persisted_NoDuplicates() throws Exception {
+        // Setup 2 students and 1 admin
+        User student1 = userRepository.findByEmail("student_notif_1@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("student_notif_1@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_STUDENT)
+                        .enabled(true)
+                        .build()));
+
+        User student2 = userRepository.findByEmail("student_notif_2@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("student_notif_2@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_STUDENT)
+                        .enabled(true)
+                        .build()));
+
+        User adminUser = userRepository.findByEmail("admin_notif@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("admin_notif@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_ADMIN)
+                        .enabled(true)
+                        .build()));
+
+        long student1InitialNotifs = notificationRepository.countByUser_IdAndIsReadFalse(student1.getId());
+        long student2InitialNotifs = notificationRepository.countByUser_IdAndIsReadFalse(student2.getId());
+        long recruiterInitialNotifs = notificationRepository.countByUser_IdAndIsReadFalse(recruiterUser.getId());
+        long adminInitialNotifs = notificationRepository.countByUser_IdAndIsReadFalse(adminUser.getId());
+
+        // 1. Create a draft job -> No notification should be created
+        JobCreateRequest jobReq = JobCreateRequest.builder()
+                .title("Full Stack Cloud Architect")
+                .description("Build enterprise cloud applications.")
+                .location("Bengaluru, India")
+                .workMode(WorkMode.HYBRID)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.SENIOR_LEVEL)
+                .skills(List.of(JobSkillItemRequest.builder().skillId(javaSkill.getId()).isRequired(true).build()))
+                .build();
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", recruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(jobReq)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long jobId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Check that draft creation didn't create student notifications, but notified admin
+        org.junit.jupiter.api.Assertions.assertEquals(student1InitialNotifs, notificationRepository.countByUser_IdAndIsReadFalse(student1.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(student2InitialNotifs, notificationRepository.countByUser_IdAndIsReadFalse(student2.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(adminInitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(adminUser.getId()));
+
+        // 2. Publish Job -> Notification should be sent to students only
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + jobId + "/publish")
                         .header("Authorization", recruiterToken))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", containsString("at least one required skill")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+
+        // Verify students received notification
+        org.junit.jupiter.api.Assertions.assertEquals(student1InitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(student1.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(student2InitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(student2.getId()));
+
+        // Verify recruiter did NOT receive notification, and admin did NOT receive student job notification
+        org.junit.jupiter.api.Assertions.assertEquals(recruiterInitialNotifs, notificationRepository.countByUser_IdAndIsReadFalse(recruiterUser.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(adminInitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(adminUser.getId()));
+
+        // Check notification content in Student 1's notifications
+        var student1Notifs = notificationRepository.findAllByUser_IdOrderByCreatedAtDesc(student1.getId(), org.springframework.data.domain.Pageable.unpaged());
+        var latestNotif = student1Notifs.getContent().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("New Job Posted", latestNotif.getTitle());
+        org.junit.jupiter.api.Assertions.assertTrue(latestNotif.getMessage().contains("Full Stack Cloud Architect"));
+        org.junit.jupiter.api.Assertions.assertTrue(latestNotif.getMessage().contains("TechCorp Solutions"));
+
+        // 3. Attempting duplicate publication should fail and NOT create duplicate notifications
+        mockMvc.perform(patch("/api/v1/recruiters/jobs/" + jobId + "/publish")
+                        .header("Authorization", recruiterToken))
+                .andExpect(status().isBadRequest());
+
+        org.junit.jupiter.api.Assertions.assertEquals(student1InitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(student1.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(student2InitialNotifs + 1, notificationRepository.countByUser_IdAndIsReadFalse(student2.getId()));
+    }
+
+    @Test
+    @DisplayName("Job creation notifies only active Admins of job pending moderation, recipient isolation verified")
+    void testJobCreation_NotifiesOnlyActiveAdmins() throws Exception {
+        // Setup 2 active Admins, 1 disabled Admin, 1 Student
+        User activeAdmin1 = userRepository.findByEmail("admin1_job_mod_test@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("admin1_job_mod_test@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_ADMIN)
+                        .enabled(true)
+                        .build()));
+
+        User activeAdmin2 = userRepository.findByEmail("admin2_job_mod_test@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("admin2_job_mod_test@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_ADMIN)
+                        .enabled(true)
+                        .build()));
+
+        User disabledAdmin = userRepository.findByEmail("admin_disabled_job_mod_test@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("admin_disabled_job_mod_test@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_ADMIN)
+                        .enabled(false)
+                        .build()));
+
+        User student = userRepository.findByEmail("student_job_mod_test@careerforge.local")
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email("student_job_mod_test@careerforge.local")
+                        .passwordHash(passwordEncoder.encode("TestPass123!"))
+                        .role(Role.ROLE_STUDENT)
+                        .enabled(true)
+                        .build()));
+
+        long admin1InitialCount = notificationRepository.countByUser_IdAndIsReadFalse(activeAdmin1.getId());
+        long admin2InitialCount = notificationRepository.countByUser_IdAndIsReadFalse(activeAdmin2.getId());
+        long disabledAdminInitialCount = notificationRepository.countByUser_IdAndIsReadFalse(disabledAdmin.getId());
+        long recruiterInitialCount = notificationRepository.countByUser_IdAndIsReadFalse(recruiterUser.getId());
+        long studentInitialCount = notificationRepository.countByUser_IdAndIsReadFalse(student.getId());
+
+        JobCreateRequest jobReq = JobCreateRequest.builder()
+                .title("Staff Distributed Systems Engineer")
+                .description("Build globally distributed database storage engine.")
+                .location("Bengaluru, India")
+                .workMode(WorkMode.HYBRID)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.SENIOR_LEVEL)
+                .skills(List.of(JobSkillItemRequest.builder().skillId(javaSkill.getId()).isRequired(true).build()))
+                .build();
+
+        // 1. Recruiter creates job
+        mockMvc.perform(post("/api/v1/recruiters/jobs")
+                        .header("Authorization", recruiterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(jobReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+
+        // 2. Active admins received moderation notification
+        org.junit.jupiter.api.Assertions.assertEquals(admin1InitialCount + 1, notificationRepository.countByUser_IdAndIsReadFalse(activeAdmin1.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(admin2InitialCount + 1, notificationRepository.countByUser_IdAndIsReadFalse(activeAdmin2.getId()));
+
+        // 3. Disabled admin, recruiter, and student received NO notifications on job creation
+        org.junit.jupiter.api.Assertions.assertEquals(disabledAdminInitialCount, notificationRepository.countByUser_IdAndIsReadFalse(disabledAdmin.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(recruiterInitialCount, notificationRepository.countByUser_IdAndIsReadFalse(recruiterUser.getId()));
+        org.junit.jupiter.api.Assertions.assertEquals(studentInitialCount, notificationRepository.countByUser_IdAndIsReadFalse(student.getId()));
+
+        // 4. Verify notification content
+        var notifs = notificationRepository.findAllByUser_IdOrderByCreatedAtDesc(activeAdmin1.getId(), org.springframework.data.domain.Pageable.unpaged());
+        var latest = notifs.getContent().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("New Job Pending Moderation", latest.getTitle());
+        org.junit.jupiter.api.Assertions.assertTrue(latest.getMessage().contains("Staff Distributed Systems Engineer"));
+        org.junit.jupiter.api.Assertions.assertTrue(latest.getMessage().contains("TechCorp Solutions"));
+        org.junit.jupiter.api.Assertions.assertTrue(latest.getMessage().contains("requires review"));
     }
 }

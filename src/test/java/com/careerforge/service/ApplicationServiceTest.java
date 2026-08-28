@@ -55,6 +55,8 @@ class ApplicationServiceTest {
     private StorageService storageService;
     @Mock
     private ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
+    @Mock
+    private UserRepository userRepository;
 
     @InjectMocks
     private ApplicationServiceImpl applicationService;
@@ -330,7 +332,165 @@ class ApplicationServiceTest {
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW_SCHEDULED);
         assertThat(application.getInterviewScheduledAt()).isEqualTo(interviewTime);
-        verify(notificationService).sendNotification(eq(1L), anyString(), anyString(), eq(NotificationType.INTERVIEW_INVITE));
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Interview Scheduled"),
+                contains("An interview has been scheduled"),
+                eq(NotificationType.INTERVIEW_INVITE),
+                eq("APPLICATION"),
+                eq(500L)
+        );
+    }
+
+    @Test
+    @DisplayName("Recruiter transitions to INTERVIEW_SCHEDULED formats notification message in Asia/Kolkata timezone")
+    void testRecruiterTransition_ToInterviewScheduled_FormatsNotificationInAsiaKolkata() {
+        application.setStatus(ApplicationStatus.SHORTLISTED);
+        // 2026-08-29 04:58:00 UTC = 2026-08-29 10:28:00 IST (+5:30)
+        LocalDateTime utcInterviewInstant = LocalDateTime.of(2026, 8, 29, 4, 58, 0);
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
+        when(applicationRepository.save(any(Application.class))).thenReturn(application);
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
+
+        ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
+                .status(ApplicationStatus.INTERVIEW_SCHEDULED)
+                .interviewScheduledAt(utcInterviewInstant)
+                .build();
+
+        applicationService.updateApplicationStatus(2L, 500L, request);
+
+        org.mockito.ArgumentCaptor<String> messageCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Interview Scheduled"),
+                messageCaptor.capture(),
+                eq(NotificationType.INTERVIEW_INVITE),
+                eq("APPLICATION"),
+                eq(500L)
+        );
+
+        assertThat(messageCaptor.getValue()).contains("Aug 29, 2026 at 10:28 AM");
+    }
+
+    @Test
+    @DisplayName("Recruiter reschedules interview sends INTERVIEW_RESCHEDULED notification")
+    void testRecruiterTransition_RescheduleInterview() {
+        application.setStatus(ApplicationStatus.INTERVIEW_SCHEDULED);
+        application.setInterviewScheduledAt(LocalDateTime.now().plusDays(2));
+        LocalDateTime newInterviewTime = LocalDateTime.now().plusDays(4);
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
+        when(applicationRepository.save(any(Application.class))).thenReturn(application);
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
+
+        ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
+                .status(ApplicationStatus.INTERVIEW_SCHEDULED)
+                .interviewScheduledAt(newInterviewTime)
+                .build();
+
+        applicationService.updateApplicationStatus(2L, 500L, request);
+
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Interview Rescheduled"),
+                contains("has been rescheduled to"),
+                eq(NotificationType.INTERVIEW_RESCHEDULED),
+                eq("APPLICATION"),
+                eq(500L)
+        );
+    }
+
+    @Test
+    @DisplayName("Recruiter transitions UNDER_REVIEW -> SHORTLISTED sends APPLICATION_SHORTLISTED notification")
+    void testRecruiterTransition_ToShortlisted() {
+        application.setStatus(ApplicationStatus.UNDER_REVIEW);
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
+        when(applicationRepository.save(any(Application.class))).thenReturn(application);
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
+
+        ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
+                .status(ApplicationStatus.SHORTLISTED)
+                .build();
+
+        applicationService.updateApplicationStatus(2L, 500L, request);
+
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Application Shortlisted"),
+                contains("has been shortlisted by the hiring team"),
+                eq(NotificationType.APPLICATION_SHORTLISTED),
+                eq("APPLICATION"),
+                eq(500L)
+        );
+    }
+
+    @Test
+    @DisplayName("Recruiter transitions INTERVIEW_SCHEDULED -> ACCEPTED sends APPLICATION_ACCEPTED notification")
+    void testRecruiterTransition_ToAccepted() {
+        application.setStatus(ApplicationStatus.INTERVIEW_SCHEDULED);
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
+        when(applicationRepository.save(any(Application.class))).thenReturn(application);
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
+
+        ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
+                .status(ApplicationStatus.ACCEPTED)
+                .build();
+
+        applicationService.updateApplicationStatus(2L, 500L, request);
+
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Application Accepted"),
+                contains("has been accepted"),
+                eq(NotificationType.APPLICATION_ACCEPTED),
+                eq("APPLICATION"),
+                eq(500L)
+        );
+    }
+
+    @Test
+    @DisplayName("Recruiter transitions to REJECTED sends APPLICATION_REJECTED notification")
+    void testRecruiterTransition_ToRejected() {
+        application.setStatus(ApplicationStatus.UNDER_REVIEW);
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(applicationRepository.findByIdAndJob_Company_Id(500L, 50L)).thenReturn(Optional.of(application));
+        when(applicationRepository.save(any(Application.class))).thenReturn(application);
+        when(skillMatchingService.calculateMatchForStudentAndJob(10L, 100L)).thenReturn(SkillMatchResponse.builder().build());
+
+        ApplicationStatusUpdateRequest request = ApplicationStatusUpdateRequest.builder()
+                .status(ApplicationStatus.REJECTED)
+                .build();
+
+        applicationService.updateApplicationStatus(2L, 500L, request);
+
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq(2L),
+                eq("Bob Recruiter"),
+                eq("Application Rejected"),
+                contains("was not selected by the hiring team"),
+                eq(NotificationType.APPLICATION_REJECTED),
+                eq("APPLICATION"),
+                eq(500L)
+        );
     }
 
     @Test

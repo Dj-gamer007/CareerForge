@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/authStore';
 import { recruiterService } from '@/services/recruiter.service';
 import { queryKeys } from '@/lib/queryClient';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -9,10 +10,14 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/feedback/LoadingSpinner';
+import { ErrorState } from '@/components/feedback/ErrorState';
 import { Building2 } from 'lucide-react';
 
 export function RecruiterCompanyPage() {
   const queryClient = useQueryClient();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const userId = user?.id;
+
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -24,21 +29,41 @@ export function RecruiterCompanyPage() {
     location: '',
   });
 
-  const { data: company, isLoading } = useQuery({
-    queryKey: queryKeys.recruiter.company,
+  const {
+    data: company,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.recruiter.company(userId),
     queryFn: () => recruiterService.getMyCompany(),
+    enabled: isAuthenticated && !isAuthLoading && user?.role === 'ROLE_RECRUITER' && !!userId,
+    retry: false,
+    refetchInterval: (query) => (query.state.data ? 2000 : false),
+    refetchIntervalInBackground: false,
   });
 
   const saveMutation = useMutation({
     mutationFn: (payload: any) =>
       company?.id ? recruiterService.updateMyCompany(payload) : recruiterService.registerCompany(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.company });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.recruiter.company() });
+      await queryClient.refetchQueries({ queryKey: queryKeys.recruiter.company() });
       setIsEditing(false);
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading company information..." />;
+  if (isAuthLoading || isLoading) return <LoadingSpinner text="Loading company information..." />;
+
+  if (isError) {
+    return (
+      <ErrorState
+        error={error}
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   const startEdit = () => {
     setForm({

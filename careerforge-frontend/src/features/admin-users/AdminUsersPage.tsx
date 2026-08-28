@@ -41,9 +41,9 @@ export function AdminUsersPage() {
     queryKey: queryKeys.admin.users({
       page,
       size: 10,
-      search: searchInput || undefined,
-      role: roleFilter || undefined,
-      enabled: enabledFilter !== '' ? enabledFilter === 'true' : undefined,
+      search: searchInput,
+      role: roleFilter,
+      enabled: enabledFilter,
     }),
     queryFn: () =>
       adminService.getUsers({
@@ -54,7 +54,8 @@ export function AdminUsersPage() {
         enabled: enabledFilter !== '' ? enabledFilter === 'true' : undefined,
       }),
     placeholderData: (previousData) => previousData,
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: userDetail, isLoading: isDetailLoading } = useQuery({
@@ -62,6 +63,7 @@ export function AdminUsersPage() {
     queryFn: () => adminService.getUserById(selectedUser!.id),
     enabled: isDetailModalOpen && !!selectedUser?.id,
     refetchInterval: isDetailModalOpen && !!selectedUser?.id ? 2500 : false,
+    refetchIntervalInBackground: false,
   });
 
   const updateStatusMutation = useMutation({
@@ -98,8 +100,7 @@ export function AdminUsersPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load users"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch user accounts'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -232,11 +233,11 @@ export function AdminUsersPage() {
         </CardContent>
         {usersData && (
           <PaginationControls
-            currentPage={usersData.number}
+            currentPage={usersData.page ?? usersData.number ?? 0}
             totalPages={usersData.totalPages}
             totalElements={usersData.totalElements}
             pageSize={usersData.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         )}
       </Card>

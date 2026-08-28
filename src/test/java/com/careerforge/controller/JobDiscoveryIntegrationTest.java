@@ -68,10 +68,11 @@ class JobDiscoveryIntegrationTest {
     private Skill reactSkill;
     private Long publishedJobId;
     private String publishedJobSlug;
+    private User recruiter;
 
     @BeforeEach
     void setUp() {
-        User recruiter = userRepository.findByEmail("recruiter_discovery@careerforge.local")
+        recruiter = userRepository.findByEmail("recruiter_discovery@careerforge.local")
                 .orElseGet(() -> userRepository.save(User.builder()
                         .email("recruiter_discovery@careerforge.local")
                         .passwordHash(passwordEncoder.encode("TestPass123!"))
@@ -188,5 +189,175 @@ class JobDiscoveryIntegrationTest {
         mockMvc.perform(get("/api/v1/jobs/slug/" + publishedJobSlug))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(publishedJobId));
+    }
+
+    @Test
+    @DisplayName("General search matches required AND optional skills case-insensitively without duplicate results")
+    void testGeneralSearch_MatchesRequiredAndOptionalSkillsCaseInsensitively() throws Exception {
+        User recruiter = userRepository.findByEmail("recruiter_discovery@careerforge.local").orElseThrow();
+
+        Skill pythonSkill = skillRepository.findByNameIgnoreCase("Python")
+                .orElseGet(() -> skillRepository.save(Skill.builder().name("Python").category("Backend").build()));
+        Skill mysqlSkill = skillRepository.findByNameIgnoreCase("MySQL")
+                .orElseGet(() -> skillRepository.save(Skill.builder().name("MySQL").category("Database").build()));
+        Skill dockerSkill = skillRepository.findByNameIgnoreCase("Docker")
+                .orElseGet(() -> skillRepository.save(Skill.builder().name("Docker").category("DevOps").build()));
+        Skill springBootSkill = skillRepository.findByNameIgnoreCase("Spring Boot")
+                .orElseGet(() -> skillRepository.save(Skill.builder().name("Spring Boot").category("Backend").build()));
+
+        // Create a multi-skill job where description and title DO NOT mention MySQL, Docker, or Spring Boot
+        JobCreateRequest multiSkillReq = JobCreateRequest.builder()
+                .title("Cloud Systems Specialist")
+                .description("Build high-performance distributed backend services.")
+                .location("Hyderabad, India")
+                .workMode(WorkMode.HYBRID)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.MID_LEVEL)
+                .salaryMin(new BigDecimal("1800000"))
+                .salaryMax(new BigDecimal("2400000"))
+                .currency("INR")
+                .deadline(LocalDateTime.now().plusDays(30))
+                .skills(List.of(
+                        // Required skills: Java, Python
+                        JobSkillItemRequest.builder().skillId(javaSkill.getId()).isRequired(true).minimumProficiency(SkillProficiency.ADVANCED).build(),
+                        JobSkillItemRequest.builder().skillId(pythonSkill.getId()).isRequired(true).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        // Optional skills: MySQL, Docker, Spring Boot
+                        JobSkillItemRequest.builder().skillId(mysqlSkill.getId()).isRequired(false).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        JobSkillItemRequest.builder().skillId(dockerSkill.getId()).isRequired(false).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        JobSkillItemRequest.builder().skillId(springBootSkill.getId()).isRequired(false).minimumProficiency(SkillProficiency.ADVANCED).build()
+                ))
+                .build();
+
+        JobDetailResponse draft = jobService.createJob(recruiter.getId(), multiSkillReq);
+        jobService.publishJob(recruiter.getId(), draft.getId());
+
+        // A. Required Skill: Java
+        mockMvc.perform(get("/api/v1/jobs?keyword=Java"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(2))); // 2 jobs match Java (both Senior Java Architect and Cloud Systems Specialist)
+
+        // B. Required Skill: Python
+        mockMvc.perform(get("/api/v1/jobs?keyword=Python"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        // C. Optional Skill: MySQL (with various casing)
+        mockMvc.perform(get("/api/v1/jobs?keyword=MySQL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?keyword=mysql"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?keyword=MYSQL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        // D. Optional Skill: Docker
+        mockMvc.perform(get("/api/v1/jobs?keyword=Docker"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?keyword=docker"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        // E. Optional Skill: Spring Boot
+        mockMvc.perform(get("/api/v1/jobs?keyword=Spring Boot"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?keyword=spring boot"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?keyword=SPRING BOOT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        // F. Non-existent skill / keyword
+        mockMvc.perform(get("/api/v1/jobs?keyword=KubernetesXYZNotFound"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(0))
+                .andExpect(jsonPath("$.data.content", hasSize(0)));
+
+        // G. Dedicated skill filter still works for optional skills
+        mockMvc.perform(get("/api/v1/jobs?skillIds=" + mysqlSkill.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+
+        mockMvc.perform(get("/api/v1/jobs?skillIds=" + dockerSkill.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].title").value("Cloud Systems Specialist"));
+    }
+
+    @Test
+    @DisplayName("Should serialize required and optional skills with accurate boolean flags and minimum proficiencies in /api/v1/jobs/{slug}")
+    void testJobDetail_MixedSkillsRequiredOptionalFlagsPreserved() throws Exception {
+        Skill java = skillRepository.findByNameIgnoreCase("Java").orElseGet(() -> skillRepository.save(Skill.builder().name("Java").category("Backend").build()));
+        Skill python = skillRepository.findByNameIgnoreCase("Python").orElseGet(() -> skillRepository.save(Skill.builder().name("Python").category("Backend").build()));
+        Skill mysql = skillRepository.findByNameIgnoreCase("MySQL").orElseGet(() -> skillRepository.save(Skill.builder().name("MySQL").category("Database").build()));
+        Skill docker = skillRepository.findByNameIgnoreCase("Docker").orElseGet(() -> skillRepository.save(Skill.builder().name("Docker").category("DevOps").build()));
+        Skill springBoot = skillRepository.findByNameIgnoreCase("Spring Boot").orElseGet(() -> skillRepository.save(Skill.builder().name("Spring Boot").category("Backend").build()));
+
+        JobCreateRequest mixedJobReq = JobCreateRequest.builder()
+                .title("Staff Platform Engineer")
+                .description("Build core platforms.")
+                .location("Hyderabad, India")
+                .workMode(WorkMode.HYBRID)
+                .jobType(JobType.FULL_TIME)
+                .experienceLevel(ExperienceLevel.SENIOR_LEVEL)
+                .currency("INR")
+                .salaryMin(new BigDecimal("2500000"))
+                .salaryMax(new BigDecimal("3500000"))
+                .deadline(LocalDateTime.now().plusDays(30))
+                .skills(List.of(
+                        JobSkillItemRequest.builder().skillId(java.getId()).isRequired(true).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        JobSkillItemRequest.builder().skillId(python.getId()).isRequired(true).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        JobSkillItemRequest.builder().skillId(mysql.getId()).isRequired(false).minimumProficiency(SkillProficiency.INTERMEDIATE).build(),
+                        JobSkillItemRequest.builder().skillId(docker.getId()).isRequired(false).minimumProficiency(SkillProficiency.BEGINNER).build(),
+                        JobSkillItemRequest.builder().skillId(springBoot.getId()).isRequired(true).minimumProficiency(SkillProficiency.ADVANCED).build()
+                ))
+                .build();
+
+        JobDetailResponse created = jobService.createJob(recruiter.getId(), mixedJobReq);
+        jobService.publishJob(recruiter.getId(), created.getId());
+
+        mockMvc.perform(get("/api/v1/jobs/slug/" + created.getSlug()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.skills", hasSize(5)))
+                // Java: REQUIRED, INTERMEDIATE
+                .andExpect(jsonPath("$.data.skills[0].skillName").value("Java"))
+                .andExpect(jsonPath("$.data.skills[0].required").value(true))
+                .andExpect(jsonPath("$.data.skills[0].minimumProficiency").value("INTERMEDIATE"))
+                // Python: REQUIRED, INTERMEDIATE
+                .andExpect(jsonPath("$.data.skills[1].skillName").value("Python"))
+                .andExpect(jsonPath("$.data.skills[1].required").value(true))
+                .andExpect(jsonPath("$.data.skills[1].minimumProficiency").value("INTERMEDIATE"))
+                // MySQL: OPTIONAL, INTERMEDIATE
+                .andExpect(jsonPath("$.data.skills[2].skillName").value("MySQL"))
+                .andExpect(jsonPath("$.data.skills[2].required").value(false))
+                .andExpect(jsonPath("$.data.skills[2].minimumProficiency").value("INTERMEDIATE"))
+                // Docker: OPTIONAL, BEGINNER
+                .andExpect(jsonPath("$.data.skills[3].skillName").value("Docker"))
+                .andExpect(jsonPath("$.data.skills[3].required").value(false))
+                .andExpect(jsonPath("$.data.skills[3].minimumProficiency").value("BEGINNER"))
+                // Spring Boot: REQUIRED, ADVANCED
+                .andExpect(jsonPath("$.data.skills[4].skillName").value("Spring Boot"))
+                .andExpect(jsonPath("$.data.skills[4].required").value(true))
+                .andExpect(jsonPath("$.data.skills[4].minimumProficiency").value("ADVANCED"));
     }
 }

@@ -1,5 +1,6 @@
 package com.careerforge.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,6 +24,11 @@ public class PagedResponse<T> {
     private long totalElements;
     private int totalPages;
     private boolean last;
+
+    @JsonProperty("number")
+    public int getNumber() {
+        return this.page;
+    }
 
     public static <T> PagedResponse<T> of(Page<?> page, List<T> content) {
         return PagedResponse.<T>builder()

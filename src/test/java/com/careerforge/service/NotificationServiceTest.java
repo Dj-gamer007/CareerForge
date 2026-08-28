@@ -83,7 +83,7 @@ class NotificationServiceTest {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Notification> page = new PageImpl<>(List.of(notification1, notification2), pageable, 2);
 
-        when(notificationRepository.findAllByUser_IdOrderByCreatedAtDesc(1L, pageable)).thenReturn(page);
+        when(notificationRepository.findAllByUser_IdOrderByCreatedAtDescIdDesc(1L, pageable)).thenReturn(page);
 
         PagedResponse<NotificationResponse> result = notificationService.getUserNotifications(1L, pageable);
 
@@ -140,5 +140,37 @@ class NotificationServiceTest {
         assertThat(result.getId()).isEqualTo(200L);
         assertThat(result.getTitle()).isEqualTo("Test Alert");
         assertThat(result.getType()).isEqualTo(NotificationType.SYSTEM_ALERT);
+    }
+
+    @Test
+    @DisplayName("Should send and persist a new notification with actor and related entity")
+    void testSendNotification_WithActorAndRelatedEntity() {
+        User actorUser = User.builder().id(2L).email("recruiter@careerforge.local").role(Role.ROLE_RECRUITER).build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(actorUser));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(i -> {
+            Notification n = i.getArgument(0);
+            n.setId(201L);
+            return n;
+        });
+
+        Notification result = notificationService.sendNotification(
+                1L,
+                2L,
+                "John Smith",
+                "Application Shortlisted",
+                "Your application for 'Java Developer' at Delite Works has been shortlisted.",
+                NotificationType.APPLICATION_SHORTLISTED,
+                "APPLICATION",
+                55L
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(201L);
+        assertThat(result.getActorName()).isEqualTo("John Smith");
+        assertThat(result.getActorUser()).isEqualTo(actorUser);
+        assertThat(result.getRelatedEntityType()).isEqualTo("APPLICATION");
+        assertThat(result.getRelatedEntityId()).isEqualTo(55L);
+        assertThat(result.getType()).isEqualTo(NotificationType.APPLICATION_SHORTLISTED);
     }
 }

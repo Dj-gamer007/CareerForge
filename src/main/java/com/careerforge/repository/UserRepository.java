@@ -21,6 +21,10 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 
     long countByRole(Role role);
 
+    List<User> findAllByRole(Role role);
+
+    List<User> findAllByRoleAndEnabledTrue(Role role);
+
     long countByEnabled(boolean enabled);
 
     long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);

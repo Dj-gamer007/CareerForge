@@ -49,9 +49,9 @@ export const recruiterService = {
     return res.data.data;
   },
 
-  async getMyCompany(): Promise<CompanyDetailResponse> {
-    const res = await apiClient.get<ApiResponse<CompanyDetailResponse>>('/companies/my-company');
-    return res.data.data;
+  async getMyCompany(): Promise<CompanyDetailResponse | null> {
+    const res = await apiClient.get<ApiResponse<CompanyDetailResponse | null>>('/companies/my-company');
+    return res.data.data ?? null;
   },
 
   async updateMyCompany(payload: {

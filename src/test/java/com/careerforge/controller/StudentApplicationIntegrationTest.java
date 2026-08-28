@@ -7,6 +7,8 @@ import com.careerforge.dto.request.JobSkillItemRequest;
 import com.careerforge.dto.request.StudentProfileRequest;
 import com.careerforge.dto.response.CompanyResponse;
 import com.careerforge.dto.response.JobDetailResponse;
+import com.careerforge.entity.Application;
+import com.careerforge.entity.Notification;
 import com.careerforge.entity.Resume;
 import com.careerforge.entity.Skill;
 import com.careerforge.entity.StudentProfile;
@@ -15,8 +17,10 @@ import com.careerforge.entity.enums.ExperienceLevel;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.Role;
 import com.careerforge.entity.enums.WorkMode;
+import com.careerforge.repository.ApplicationRepository;
 import com.careerforge.repository.ApplicationStatusHistoryRepository;
 import com.careerforge.repository.CompanyRepository;
+import com.careerforge.repository.NotificationRepository;
 import com.careerforge.repository.ResumeRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.StudentProfileRepository;
@@ -44,6 +48,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -64,6 +69,9 @@ class StudentApplicationIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private ApplicationRepository applicationRepository;
+
+    @Autowired
     private StudentProfileRepository studentProfileRepository;
 
     @Autowired
@@ -74,6 +82,12 @@ class StudentApplicationIntegrationTest {
 
     @Autowired
     private ApplicationStatusHistoryRepository applicationStatusHistoryRepository;
+
+    @Autowired
+    private NotificationRepository notificationRepository;
+
+    @Autowired
+    private com.careerforge.config.DataInitializer dataInitializer;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -665,10 +679,10 @@ class StudentApplicationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.unreadCount", greaterThanOrEqualTo(1)));
 
-        // Verify student2 does NOT receive this recruiter notification
+        // Verify student2 does NOT receive this recruiter notification ("New application received")
         mockMvc.perform(get("/api/v1/notifications").header("Authorization", studentToken2))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content", hasSize(0)));
+                .andExpect(jsonPath("$.data.content[*].title", not(hasItem("New application received"))));
     }
 
     @Test
@@ -702,5 +716,177 @@ class StudentApplicationIntegrationTest {
                 .andExpect(jsonPath("$.data[2].toStatus").value("SHORTLISTED"))
                 .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"))
                 .andExpect(jsonPath("$.data[4].toStatus").value("ACCEPTED"));
+    }
+
+    @Test
+    @DisplayName("Timezone Consistency: Scheduling interview with UTC ISO string formats notification in Asia/Kolkata timezone")
+    void testInterviewScheduling_TimezoneAndNotificationConsistency() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Timezone test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Advance APPLIED -> UNDER_REVIEW -> SHORTLISTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+
+        // Schedule interview using UTC ISO instant: 2026-08-29T04:58:00Z (which corresponds to 10:28 AM IST)
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-08-29T04:58:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.interviewScheduledAt").value("2026-08-29T04:58:00"));
+
+        // Verify Candidate Notification contains local Asia/Kolkata time ("Aug 29, 2026 at 10:28 AM")
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].type").value("INTERVIEW_INVITE"))
+                .andExpect(jsonPath("$.data.content[0].message").value(org.hamcrest.Matchers.containsString("Aug 29, 2026 at 10:28 AM")));
+
+        // Also verify Student Application Card API response contains interviewScheduledAt
+        mockMvc.perform(get("/api/v1/students/applications").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.content[0].interviewScheduledAt").value("2026-08-29T04:58:00"));
+    }
+
+    @Test
+    @DisplayName("End-to-End Unique Time Chain: Recruiter enters 6:17 PM IST (Aug 28, 2026), verified across DB, API, Notification, History")
+    void testInterviewScheduling_UniqueTimeEndToEndChain() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Unique Time Test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // 1. Advance APPLIED -> UNDER_REVIEW -> SHORTLISTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+
+        // 2. Recruiter schedules interview for: Aug 28, 2026 at 6:17 PM IST
+        // In browser (Asia/Kolkata), new Date("2026-08-28T18:17").toISOString() produces: "2026-08-28T12:47:00.000Z"
+        String requestPayload = "{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-08-28T12:47:00.000Z\"}";
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.interviewScheduledAt").value("2026-08-28T12:47:00"));
+
+        // 3. Database direct verification
+        Application savedEntity = applicationRepository.findById(appId).orElseThrow();
+        assertThat(savedEntity.getInterviewScheduledAt()).isEqualTo(LocalDateTime.of(2026, 8, 28, 12, 47, 0));
+
+        // 4. Candidate Notification verification (contains Aug 28, 2026 at 6:17 PM)
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].type").value("INTERVIEW_INVITE"))
+                .andExpect(jsonPath("$.data.content[0].message").value(org.hamcrest.Matchers.containsString("Aug 28, 2026 at 6:17 PM")));
+
+        // 5. Student Application Card API verification
+        mockMvc.perform(get("/api/v1/students/applications").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.content[0].interviewScheduledAt").value("2026-08-28T12:47:00"));
+
+        // 6. Recruiter ATS API verification
+        mockMvc.perform(get("/api/v1/recruiters/jobs/" + publishedJobId + "/applications").header("Authorization", recruiterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.content[0].interviewScheduledAt").value("2026-08-28T12:47:00"));
+
+        // 7. Student Application History API verification
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(4)))
+                .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"));
+    }
+
+    @Test
+    @DisplayName("Task 3 & 4: Legacy Notification Migration updates message to Asia/Kolkata while preserving history and creation timestamps")
+    void testLegacyNotificationMigration_PreservesTransitionTimestampAndUpdatesMessage() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Legacy migration test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Advance to INTERVIEW_SCHEDULED with UTC instant: 2026-08-29 04:58:00
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-08-29T04:58:00Z\"}")).andExpect(status().isOk());
+
+        // Simulate an old un-migrated notification in the database with raw UTC text
+        User studentUser = userRepository.findByEmail("student_app_test1@careerforge.local").orElseThrow();
+        Notification legacyNotif = notificationRepository.findByUserOrderByCreatedAtDescIdDesc(studentUser).get(0);
+        legacyNotif.setMessage("Congratulations! An interview has been scheduled for 'Full Stack Engineer' at Delite Works on Aug 29, 2026 at 4:58 AM.");
+        notificationRepository.save(legacyNotif);
+        LocalDateTime originalCreatedAt = legacyNotif.getCreatedAt();
+
+        // Execute startup migration
+        dataInitializer.run();
+
+        // Verify notification message is updated to 10:28 AM IST and createdAt is preserved
+        Notification migratedNotif = notificationRepository.findById(legacyNotif.getId()).orElseThrow();
+        assertThat(migratedNotif.getMessage()).contains("Aug 29, 2026 at 10:28 AM");
+        assertThat(migratedNotif.getCreatedAt()).isEqualTo(originalCreatedAt);
+
+        // Verify application status history changedAt is preserved
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(4)))
+                .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data[3].changedAt").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("Task 6: New Interview scheduled for Aug 29, 2026 at 7:23 PM IST (19:23) is preserved end-to-end")
+    void testNewInterviewScheduling_Aug29_UniqueTime() throws Exception {
+        ApplicationSubmitRequest submitReq = ApplicationSubmitRequest.builder().jobId(publishedJobId).coverLetter("Aug 29 test").build();
+        MvcResult res = mockMvc.perform(post("/api/v1/students/applications").header("Authorization", studentToken1)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(submitReq)))
+                .andExpect(status().isCreated()).andReturn();
+        Long appId = objectMapper.readTree(res.getResponse().getContentAsString()).get("data").get("id").asLong();
+
+        // Advance to SHORTLISTED
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"UNDER_REVIEW\"}")).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SHORTLISTED\"}")).andExpect(status().isOk());
+
+        // Aug 29, 2026 at 7:23 PM IST (19:23:00) -> UTC instant is 13:53:00Z
+        String requestPayload = "{\"status\":\"INTERVIEW_SCHEDULED\",\"interviewScheduledAt\":\"2026-08-29T13:53:00.000Z\"}";
+        mockMvc.perform(patch("/api/v1/recruiters/applications/" + appId + "/status").header("Authorization", recruiterToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("INTERVIEW_SCHEDULED"))
+                .andExpect(jsonPath("$.data.interviewScheduledAt").value("2026-08-29T13:53:00"));
+
+        // Verify DB value
+        Application saved = applicationRepository.findById(appId).orElseThrow();
+        assertThat(saved.getInterviewScheduledAt()).isEqualTo(LocalDateTime.of(2026, 8, 29, 13, 53, 0));
+
+        // Verify Notification text contains Aug 29, 2026 at 7:23 PM
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].message").value(org.hamcrest.Matchers.containsString("Aug 29, 2026 at 7:23 PM")));
+
+        // Verify History event exists and has transition timestamp
+        mockMvc.perform(get("/api/v1/students/applications/" + appId + "/history").header("Authorization", studentToken1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[3].toStatus").value("INTERVIEW_SCHEDULED"));
     }
 }

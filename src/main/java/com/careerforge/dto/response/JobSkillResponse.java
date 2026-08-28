@@ -22,4 +22,14 @@ public class JobSkillResponse {
     private boolean isRequired;
 
     private SkillProficiency minimumProficiency;
+
+    @JsonProperty("required")
+    public boolean isRequired() {
+        return isRequired;
+    }
+
+    @JsonProperty("isRequired")
+    public boolean getIsRequired() {
+        return isRequired;
+    }
 }

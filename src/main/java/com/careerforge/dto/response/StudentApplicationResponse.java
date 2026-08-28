@@ -2,6 +2,7 @@ package com.careerforge.dto.response;
 
 import com.careerforge.entity.enums.ApplicationStatus;
 import com.careerforge.entity.enums.ExperienceLevel;
+import com.careerforge.entity.enums.JobStatus;
 import com.careerforge.entity.enums.JobType;
 import com.careerforge.entity.enums.WorkMode;
 import lombok.AllArgsConstructor;
@@ -22,6 +23,7 @@ public class StudentApplicationResponse {
     private Long jobId;
     private String jobTitle;
     private String jobSlug;
+    private JobStatus jobStatus;
     private Long companyId;
     private String companyName;
     private String companyLogoUrl;

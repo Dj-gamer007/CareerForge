@@ -32,8 +32,9 @@ export function MatchPreviewModal({ isOpen, onClose, jobId }: MatchPreviewModalP
         <LoadingSpinner text="Computing weighted skill match..." />
       ) : isError ? (
         <ErrorState
+          variant="inline"
           title="Analysis Failed"
-          message={(error as any)?.response?.data?.message || 'Unable to calculate match score'}
+          error={error}
           onRetry={() => refetch()}
         />
       ) : match ? (

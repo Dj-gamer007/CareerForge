@@ -1,8 +1,13 @@
 package com.careerforge.config;
 
+import com.careerforge.entity.Application;
+import com.careerforge.entity.Notification;
 import com.careerforge.entity.Skill;
 import com.careerforge.entity.User;
+import com.careerforge.entity.enums.NotificationType;
 import com.careerforge.entity.enums.Role;
+import com.careerforge.repository.ApplicationRepository;
+import com.careerforge.repository.NotificationRepository;
 import com.careerforge.repository.SkillRepository;
 import com.careerforge.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +19,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Component
@@ -23,6 +32,8 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final SkillRepository skillRepository;
+    private final NotificationRepository notificationRepository;
+    private final ApplicationRepository applicationRepository;
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
 
@@ -36,6 +47,8 @@ public class DataInitializer implements CommandLineRunner {
         } else {
             seedDevAccounts();
         }
+
+        migrateLegacyInterviewNotifications();
     }
 
     private void seedSkills() {
@@ -121,6 +134,40 @@ public class DataInitializer implements CommandLineRunner {
             log.info("Successfully bootstrapped initial production administrator account for: {}", adminEmail.trim());
         } else {
             log.warn("Production mode active with empty user database, but ADMIN_INIT_EMAIL / ADMIN_INIT_PASSWORD were not set.");
+        }
+    }
+
+    private void migrateLegacyInterviewNotifications() {
+        List<Notification> interviewNotifs = notificationRepository.findByType(NotificationType.INTERVIEW_INVITE);
+        if (interviewNotifs.isEmpty()) {
+            return;
+        }
+
+        DateTimeFormatter legacyUtcFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' h:mm a", Locale.ENGLISH);
+        DateTimeFormatter istFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' h:mm a", Locale.ENGLISH);
+
+        for (Notification notif : interviewNotifs) {
+            String msg = notif.getMessage();
+            if (msg == null) continue;
+
+            List<Application> apps = applicationRepository.findAllByStudentProfile_User_Id(notif.getUser().getId());
+            for (Application app : apps) {
+                if (app.getInterviewScheduledAt() != null) {
+                    String rawUtcFormatted = app.getInterviewScheduledAt().format(legacyUtcFormatter);
+                    String istFormatted = app.getInterviewScheduledAt()
+                            .atZone(ZoneOffset.UTC)
+                            .withZoneSameInstant(ZoneId.of("Asia/Kolkata"))
+                            .format(istFormatter);
+
+                    if (!rawUtcFormatted.equals(istFormatted) && msg.contains(rawUtcFormatted)) {
+                        String updatedMsg = msg.replace(rawUtcFormatted, istFormatted);
+                        notif.setMessage(updatedMsg);
+                        notificationRepository.save(notif);
+                        log.info("Migrated legacy interview notification ID {} for user ID {}: replaced '{}' with '{}'",
+                                notif.getId(), notif.getUser().getId(), rawUtcFormatted, istFormatted);
+                    }
+                }
+            }
         }
     }
 }

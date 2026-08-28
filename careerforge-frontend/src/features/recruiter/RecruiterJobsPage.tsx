@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/authStore';
 import { jobService } from '@/services/job.service';
+import { recruiterService } from '@/services/recruiter.service';
 import { queryKeys } from '@/lib/queryClient';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -24,22 +26,24 @@ import {
   RotateCcw,
   Archive,
   Trash2,
+  Building2,
 } from 'lucide-react';
 import { JobStatus } from '@/types/job.types';
 
-import { recruiterService } from '@/services/recruiter.service';
-import { Building2 } from 'lucide-react';
-
 export function RecruiterJobsPage() {
   const queryClient = useQueryClient();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const userId = user?.id;
+
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<JobStatus | ''>('');
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: company, isLoading: isCompLoading } = useQuery({
-    queryKey: queryKeys.recruiter.company,
+    queryKey: queryKeys.recruiter.company(userId),
     queryFn: () => recruiterService.getMyCompany(),
+    enabled: isAuthenticated && !isAuthLoading && user?.role === 'ROLE_RECRUITER' && !!userId,
     retry: false,
   });
 
@@ -53,6 +57,9 @@ export function RecruiterJobsPage() {
       }),
     enabled: !!company?.id,
     retry: false,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const invalidateAllJobQueries = () => {
@@ -163,7 +170,7 @@ export function RecruiterJobsPage() {
     },
   });
 
-  if (isCompLoading || (isLoading && !!company?.id)) return <LoadingSpinner text="Loading company job postings..." />;
+  if (isCompLoading || (isLoading && !data && !!company?.id)) return <LoadingSpinner text="Loading company job postings..." />;
 
   if (!company) {
     return (
@@ -201,8 +208,7 @@ export function RecruiterJobsPage() {
   if (isError) {
     return (
       <ErrorState
-        title="Could not load jobs"
-        message={(error as any)?.response?.data?.message || 'Failed to fetch company jobs'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -395,11 +401,11 @@ export function RecruiterJobsPage() {
           </div>
 
           <PaginationControls
-            currentPage={data.number}
+            currentPage={data.page ?? data.number ?? 0}
             totalPages={data.totalPages}
             totalElements={data.totalElements}
             pageSize={data.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         </div>
       )}

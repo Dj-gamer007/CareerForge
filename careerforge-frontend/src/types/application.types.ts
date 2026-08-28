@@ -1,5 +1,5 @@
 import { ResumeResponse } from './student.types';
-import { JobSummaryResponse } from './job.types';
+import { JobStatus, JobSummaryResponse } from './job.types';
 
 export type ApplicationStatus =
   | 'APPLIED'
@@ -15,6 +15,7 @@ export interface StudentApplicationResponse {
   jobId: number;
   jobTitle: string;
   jobSlug: string;
+  jobStatus?: JobStatus;
   companyId: number;
   companyName: string;
   companySlug: string;

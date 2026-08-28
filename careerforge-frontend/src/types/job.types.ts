@@ -10,8 +10,8 @@ export interface JobSkillResponse {
   skillId: number;
   skillName: string;
   category: string;
-  isRequired: boolean;
-  required?: boolean;
+  required: boolean;
+  isRequired?: boolean;
   minimumProficiency: ProficiencyLevel;
 }
 

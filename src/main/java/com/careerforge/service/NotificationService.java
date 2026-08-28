@@ -18,4 +18,6 @@ public interface NotificationService {
     void markAllAsRead(Long userId);
 
     Notification sendNotification(Long userId, String title, String message, NotificationType type);
+
+    Notification sendNotification(Long userId, Long actorUserId, String actorName, String title, String message, NotificationType type, String relatedEntityType, Long relatedEntityId);
 }

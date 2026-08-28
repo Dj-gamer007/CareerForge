@@ -33,7 +33,8 @@ export const queryKeys = {
   },
   recruiter: {
     profile: ['recruiter', 'profile'] as const,
-    company: ['recruiter', 'company'] as const,
+    company: (userId?: number) =>
+      userId !== undefined ? (['recruiter', 'company', userId] as const) : (['recruiter', 'company'] as const),
     jobs: (filters?: Record<string, unknown>) =>
       filters ? (['recruiter', 'jobs', filters] as const) : (['recruiter', 'jobs'] as const),
     jobDetail: (id: number) => ['recruiter', 'jobs', id] as const,

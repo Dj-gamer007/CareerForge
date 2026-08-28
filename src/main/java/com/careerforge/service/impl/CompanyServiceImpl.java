@@ -7,15 +7,20 @@ import com.careerforge.dto.response.CompanySummaryResponse;
 import com.careerforge.dto.response.PagedResponse;
 import com.careerforge.entity.Company;
 import com.careerforge.entity.RecruiterProfile;
+import com.careerforge.entity.User;
 import com.careerforge.entity.enums.CompanyVerificationStatus;
 import com.careerforge.entity.enums.JobStatus;
+import com.careerforge.entity.enums.NotificationType;
+import com.careerforge.entity.enums.Role;
 import com.careerforge.exception.BadRequestException;
 import com.careerforge.exception.ResourceNotFoundException;
 import com.careerforge.exception.UnauthorizedException;
 import com.careerforge.repository.CompanyRepository;
 import com.careerforge.repository.JobRepository;
 import com.careerforge.repository.RecruiterProfileRepository;
+import com.careerforge.repository.UserRepository;
 import com.careerforge.service.CompanyService;
+import com.careerforge.service.NotificationService;
 import com.careerforge.service.RecruiterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +49,8 @@ public class CompanyServiceImpl implements CompanyService {
     private final RecruiterProfileRepository recruiterProfileRepository;
     private final RecruiterService recruiterService;
     private final JobRepository jobRepository;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -81,6 +88,26 @@ public class CompanyServiceImpl implements CompanyService {
         recruiterProfileRepository.save(recruiter);
 
         log.info("Created company '{}' (id: {}) by recruiter user ID: {}", savedCompany.getName(), savedCompany.getId(), userId);
+
+        // Notify active Admins that a new company is pending verification
+        List<User> admins = userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_ADMIN);
+        String notificationTitle = "New Company Pending Verification";
+        String notificationMessage = String.format("%s has registered and is waiting for verification.", savedCompany.getName());
+
+        for (User admin : admins) {
+            try {
+                notificationService.sendNotification(
+                        admin.getId(),
+                        notificationTitle,
+                        notificationMessage,
+                        NotificationType.SYSTEM_ALERT
+                );
+            } catch (Exception e) {
+                log.warn("Failed to dispatch company registration notification to admin user ID: {}", admin.getId(), e);
+            }
+        }
+        log.info("Dispatched 'New Company Pending Verification' notification to {} active admins for company ID: {}", admins.size(), savedCompany.getId());
+
         return mapToResponse(savedCompany);
     }
 
@@ -89,7 +116,7 @@ public class CompanyServiceImpl implements CompanyService {
     public CompanyResponse getMyCompany(Long userId) {
         RecruiterProfile recruiter = recruiterService.getOrCreateProfileEntity(userId);
         if (recruiter.getCompany() == null) {
-            throw new ResourceNotFoundException("Company", "recruiterUserId", userId);
+            return null;
         }
         return mapToResponse(recruiter.getCompany());
     }

@@ -12,14 +12,21 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { formatDateTime } from '@/lib/utils';
 import { Bell, CheckCheck, CheckCircle, Info } from 'lucide-react';
 
+import { useNavigate } from 'react-router-dom';
+import { NotificationResponse } from '@/types/notification.types';
+import { useAuthStore } from '@/features/auth/authStore';
+
 export function NotificationListPage() {
   const [page, setPage] = useState(0);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.notifications.list(page),
     queryFn: () => notificationService.getNotifications({ page, size: 15 }),
-    refetchInterval: 2500,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
   });
 
   const markAsReadMutation = useMutation({
@@ -36,12 +43,118 @@ export function NotificationListPage() {
     },
   });
 
-  if (isLoading) return <LoadingSpinner text="Loading notification history..." />;
+  const user = useAuthStore((state) => state.user);
+
+  const getNotificationLink = (notif: NotificationResponse) => {
+    const role = user?.role;
+    const type = notif.type;
+    const entityType = notif.relatedEntityType;
+    const entityId = notif.relatedEntityId;
+    const title = notif.title?.toLowerCase() || '';
+
+    if (role === 'ROLE_STUDENT') {
+      if (
+        type === 'APPLICATION_SHORTLISTED' ||
+        type === 'APPLICATION_ACCEPTED' ||
+        type === 'APPLICATION_REJECTED' ||
+        type === 'APPLICATION_UPDATED' ||
+        type === 'APPLICATION_UPDATE' ||
+        type === 'APPLICATION_SUBMITTED' ||
+        type === 'INTERVIEW_INVITE' ||
+        type === 'INTERVIEW_SCHEDULED' ||
+        type === 'INTERVIEW_RESCHEDULED' ||
+        entityType === 'APPLICATION' ||
+        title.includes('application') ||
+        title.includes('interview')
+      ) {
+        return '/student/applications';
+      }
+      if (type === 'JOB_RECOMMENDATION' || type === 'JOB_POSTING_PUBLISHED' || entityType === 'JOB' || title.includes('job')) {
+        return '/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED') {
+        return '/student/profile';
+      }
+    }
+
+    if (role === 'ROLE_RECRUITER') {
+      if (
+        type === 'COMPANY_VERIFIED' ||
+        type === 'COMPANY_VERIFICATION_REJECTED' ||
+        type === 'COMPANY_VERIFICATION_PENDING' ||
+        entityType === 'COMPANY' ||
+        title.includes('company')
+      ) {
+        return '/recruiter/company';
+      }
+      if (
+        type === 'JOB_POSTING_CLOSED' ||
+        type === 'JOB_POSTING_DRAFTED' ||
+        type === 'JOB_POSTING_ARCHIVED' ||
+        type === 'JOB_POSTING_PUBLISHED' ||
+        entityType === 'JOB' ||
+        title.includes('job')
+      ) {
+        return entityId && type === 'JOB_POSTING_DRAFTED' ? `/recruiter/jobs/${entityId}/edit` : '/recruiter/jobs';
+      }
+      if (entityType === 'APPLICATION' || type === 'APPLICATION_SUBMITTED' || title.includes('application')) {
+        return '/recruiter/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED') {
+        return '/recruiter/profile';
+      }
+    }
+
+    if (role === 'ROLE_ADMIN') {
+      if (
+        type === 'COMPANY_VERIFIED' ||
+        type === 'COMPANY_VERIFICATION_REJECTED' ||
+        type === 'COMPANY_VERIFICATION_PENDING' ||
+        entityType === 'COMPANY' ||
+        title.includes('company')
+      ) {
+        return '/admin/companies';
+      }
+      if (
+        type === 'JOB_POSTING_CLOSED' ||
+        type === 'JOB_POSTING_DRAFTED' ||
+        type === 'JOB_POSTING_ARCHIVED' ||
+        type === 'JOB_POSTING_PUBLISHED' ||
+        entityType === 'JOB' ||
+        title.includes('job') ||
+        title.includes('moderation')
+      ) {
+        return '/admin/jobs';
+      }
+      if (type === 'ACCOUNT_DISABLED' || entityType === 'USER' || title.includes('user') || title.includes('account')) {
+        return '/admin/users';
+      }
+      if (entityType === 'APPLICATION' || title.includes('application')) {
+        return '/admin/dashboard';
+      }
+    }
+
+    if (title.includes('company')) return '/admin/companies';
+    if (title.includes('job')) return '/jobs';
+    if (title.includes('application')) return '/student/applications';
+    return null;
+  };
+
+  const handleCardClick = (notif: NotificationResponse) => {
+    if (!notif.read && !notif.isRead) {
+      markAsReadMutation.mutate(notif.id);
+    }
+    const link = getNotificationLink(notif);
+    if (link) {
+      navigate(link);
+    }
+  };
+
+  if (isLoading && !data) return <LoadingSpinner text="Loading notification history..." />;
   if (isError) {
     return (
       <ErrorState
-        title="Could not load notifications"
-        message={(error as any)?.response?.data?.message || 'Failed to retrieve notification records'}
+        error={error}
         onRetry={() => refetch()}
       />
     );
@@ -77,15 +190,16 @@ export function NotificationListPage() {
             {data.content.map((notif) => (
               <Card
                 key={notif.id}
-                className={`transition-all ${
-                  notif.read ? 'bg-white opacity-90' : 'bg-indigo-50/40 border-indigo-200'
+                className={`transition-all cursor-pointer ${
+                  notif.read || notif.isRead ? 'bg-white opacity-90 hover:bg-slate-50' : 'bg-indigo-50/40 border-indigo-200 hover:bg-indigo-50/70'
                 }`}
+                onClick={() => handleCardClick(notif)}
               >
                 <CardContent className="p-4 sm:p-5 flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                        notif.read ? 'bg-slate-100 text-slate-500' : 'bg-indigo-600 text-white'
+                        notif.read || notif.isRead ? 'bg-slate-100 text-slate-500' : 'bg-indigo-600 text-white'
                       }`}
                     >
                       <Info className="w-4 h-4" />
@@ -93,11 +207,16 @@ export function NotificationListPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-bold text-slate-900">{notif.title}</h4>
-                        {!notif.read && (
+                        {!notif.read && !notif.isRead && (
                           <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block shrink-0" />
                         )}
                       </div>
                       <p className="text-xs text-slate-600 leading-relaxed">{notif.message}</p>
+                      {notif.actorName && (
+                        <span className="text-[10px] text-indigo-600 font-medium block">
+                          Updated by {notif.actorName}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400 block pt-1">{formatDateTime(notif.createdAt)}</span>
                     </div>
                   </div>
@@ -107,7 +226,10 @@ export function NotificationListPage() {
                       size="sm"
                       variant="ghost"
                       className="text-xs text-slate-500 hover:text-indigo-600 shrink-0"
-                      onClick={() => markAsReadMutation.mutate(notif.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markAsReadMutation.mutate(notif.id);
+                      }}
                     >
                       <CheckCircle className="w-3.5 h-3.5 mr-1" />
                       Mark Read
@@ -119,11 +241,11 @@ export function NotificationListPage() {
           </div>
 
           <PaginationControls
-            currentPage={data.number}
+            currentPage={data.page ?? data.number ?? 0}
             totalPages={data.totalPages}
             totalElements={data.totalElements}
             pageSize={data.size}
-            onPageChange={(newPage) => setPage(newPage)}
+            onPageChange={(newPage) => setPage(Number.isFinite(newPage) ? newPage : 0)}
           />
         </div>
       )}

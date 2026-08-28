@@ -18,11 +18,17 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     List<Notification> findByUserOrderByCreatedAtDesc(User user);
 
+    List<Notification> findByUserOrderByCreatedAtDescIdDesc(User user);
+
+    List<Notification> findByType(com.careerforge.entity.enums.NotificationType type);
+
     Page<Notification> findByUser(User user, Pageable pageable);
 
     long countByUserAndIsReadFalse(User user);
 
     Page<Notification> findAllByUser_IdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+
+    Page<Notification> findAllByUser_IdOrderByCreatedAtDescIdDesc(Long userId, Pageable pageable);
 
     long countByUser_IdAndIsReadFalse(Long userId);
 

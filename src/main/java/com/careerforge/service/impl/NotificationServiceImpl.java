@@ -31,7 +31,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<NotificationResponse> getUserNotifications(Long userId, Pageable pageable) {
-        Page<Notification> page = notificationRepository.findAllByUser_IdOrderByCreatedAtDesc(userId, pageable);
+        Page<Notification> page = notificationRepository.findAllByUser_IdOrderByCreatedAtDescIdDesc(userId, pageable);
         List<NotificationResponse> content = page.getContent().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -67,19 +67,34 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public Notification sendNotification(Long userId, String title, String message, NotificationType type) {
+        return sendNotification(userId, null, null, title, message, type, null, null);
+    }
+
+    @Override
+    @Transactional
+    public Notification sendNotification(Long userId, Long actorUserId, String actorName, String title, String message, NotificationType type, String relatedEntityType, Long relatedEntityId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
+        User actorUser = null;
+        if (actorUserId != null) {
+            actorUser = userRepository.findById(actorUserId).orElse(null);
+        }
+
         Notification notification = Notification.builder()
                 .user(user)
+                .actorUser(actorUser)
+                .actorName(actorName != null ? actorName.trim() : null)
                 .title(title.trim())
                 .message(message.trim())
                 .type(type)
+                .relatedEntityType(relatedEntityType != null ? relatedEntityType.trim() : null)
+                .relatedEntityId(relatedEntityId)
                 .isRead(false)
                 .build();
 
         Notification saved = notificationRepository.save(notification);
-        log.info("Dispatched notification (id: {}, type: {}) to user ID: {}", saved.getId(), type, userId);
+        log.info("Dispatched notification (id: {}, type: {}) to user ID: {} by actor: {}", saved.getId(), type, userId, actorName);
         return saved;
     }
 
@@ -92,6 +107,10 @@ public class NotificationServiceImpl implements NotificationService {
                 .isRead(notification.isRead())
                 .createdAt(notification.getCreatedAt())
                 .updatedAt(notification.getUpdatedAt())
+                .actorName(notification.getActorName())
+                .actorUserId(notification.getActorUser() != null ? notification.getActorUser().getId() : null)
+                .relatedEntityType(notification.getRelatedEntityType())
+                .relatedEntityId(notification.getRelatedEntityId())
                 .build();
     }
 }

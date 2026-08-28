@@ -10,6 +10,7 @@ import com.careerforge.exception.ResourceNotFoundException;
 import com.careerforge.repository.JobRepository;
 import com.careerforge.repository.JobSkillRepository;
 import com.careerforge.repository.SkillRepository;
+import com.careerforge.repository.UserRepository;
 import com.careerforge.service.impl.JobServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +41,15 @@ class JobServiceTest {
     @Mock
     private SkillRepository skillRepository;
     @Mock
+    private UserRepository userRepository;
+    @Mock
+    private com.careerforge.repository.ApplicationRepository applicationRepository;
+    @Mock
+    private com.careerforge.repository.SavedJobRepository savedJobRepository;
+    @Mock
     private RecruiterService recruiterService;
+    @Mock
+    private NotificationService notificationService;
     @Mock
     private AuditLogService auditLogService;
 
@@ -123,6 +132,7 @@ class JobServiceTest {
                 ))
                 .build();
 
+        User admin = User.builder().id(1L).email("admin@careerforge.local").role(Role.ROLE_ADMIN).enabled(true).build();
         when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.existsBySlug(anyString())).thenReturn(false);
         when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
@@ -135,6 +145,7 @@ class JobServiceTest {
             List<JobSkill> skills = invocation.getArgument(0);
             return skills;
         });
+        when(userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_ADMIN)).thenReturn(List.of(admin));
 
         JobDetailResponse response = jobService.createJob(2L, request);
 
@@ -143,6 +154,12 @@ class JobServiceTest {
         assertThat(response.getStatus()).isEqualTo(JobStatus.DRAFT);
         assertThat(response.getCurrency()).isEqualTo("INR");
         verify(jobRepository).save(any(Job.class));
+        verify(notificationService).sendNotification(
+                eq(1L),
+                eq("New Job Pending Moderation"),
+                contains("Software Engineer"),
+                eq(NotificationType.SYSTEM_ALERT)
+        );
     }
 
     @Test
@@ -167,19 +184,27 @@ class JobServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish draft job when requirements and future deadline are met")
+    @DisplayName("Should publish draft job when requirements and future deadline are met and notify students")
     void testPublishJob_Success() {
+        User student = User.builder().id(10L).email("student@careerforge.local").role(Role.ROLE_STUDENT).enabled(true).build();
         when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
         when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
         when(jobSkillRepository.countByJobAndIsRequiredTrue(testJob)).thenReturn(1L);
         when(jobRepository.save(any(Job.class))).thenReturn(testJob);
         when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(Collections.emptyList());
+        when(userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_STUDENT)).thenReturn(List.of(student));
 
         JobDetailResponse response = jobService.publishJob(2L, 100L);
 
         assertThat(response).isNotNull();
         assertThat(testJob.getStatus()).isEqualTo(JobStatus.PUBLISHED);
         assertThat(testJob.getPublishedAt()).isNotNull();
+        verify(notificationService).sendNotification(
+                eq(10L),
+                eq("New Job Posted"),
+                contains("Software Engineer"),
+                eq(NotificationType.JOB_RECOMMENDATION)
+        );
     }
 
     @Test
@@ -286,6 +311,88 @@ class JobServiceTest {
     }
 
     @Test
+    @DisplayName("Should successfully delete DRAFT/ARCHIVED job and notify active applicants and admins")
+    void testDeleteJob_WithApplicants_DispatchesNotificationsAndAudit() {
+        testJob.setStatus(JobStatus.DRAFT);
+
+        User studentUser1 = User.builder().id(50L).email("student1@careerforge.local").role(Role.ROLE_STUDENT).build();
+        User studentUser2 = User.builder().id(51L).email("student2@careerforge.local").role(Role.ROLE_STUDENT).build();
+        StudentProfile studentProfile1 = StudentProfile.builder().id(500L).user(studentUser1).firstName("Alice").lastName("Smith").build();
+        StudentProfile studentProfile2 = StudentProfile.builder().id(501L).user(studentUser2).firstName("Bob").lastName("Jones").build();
+
+        Application app1 = Application.builder().id(1001L).job(testJob).studentProfile(studentProfile1).status(ApplicationStatus.APPLIED).build();
+        Application app2 = Application.builder().id(1002L).job(testJob).studentProfile(studentProfile2).status(ApplicationStatus.SHORTLISTED).build();
+
+        User adminUser = User.builder().id(99L).email("admin@careerforge.local").role(Role.ROLE_ADMIN).build();
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
+        when(applicationRepository.findAllByJob(testJob)).thenReturn(List.of(app1, app2));
+        when(userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_ADMIN)).thenReturn(List.of(adminUser));
+
+        jobService.deleteJob(2L, 100L);
+
+        // Verify notifications sent to applicants
+        verify(notificationService, times(1)).sendNotification(
+                eq(50L), eq(2L), anyString(), eq("Job Position Deleted"),
+                contains("has been deleted due to business requirements"),
+                eq(NotificationType.JOB_POSTING_CLOSED), eq("JOB"), eq(100L)
+        );
+        verify(notificationService, times(1)).sendNotification(
+                eq(51L), eq(2L), anyString(), eq("Job Position Deleted"),
+                contains("has been deleted due to business requirements"),
+                eq(NotificationType.JOB_POSTING_CLOSED), eq("JOB"), eq(100L)
+        );
+
+        // Verify admin notification
+        verify(notificationService, times(1)).sendNotification(
+                eq(99L), eq(2L), anyString(), eq("Job Deleted"),
+                contains("All affected applicants have been notified"),
+                eq(NotificationType.SYSTEM_ALERT), eq("JOB"), eq(100L)
+        );
+
+        // Verify entity deletions
+        verify(savedJobRepository, times(1)).deleteAllByJob(testJob);
+        verify(jobSkillRepository, times(1)).deleteAllByJob(testJob);
+        verify(applicationRepository, times(1)).deleteAll(List.of(app1, app2));
+        verify(jobRepository, times(1)).delete(testJob);
+
+        // Verify audit log
+        verify(auditLogService, times(1)).logSuccess(
+                eq(2L), anyString(), eq("ROLE_RECRUITER"), eq(AuditEventType.JOB_DELETED),
+                eq(AuditTargetType.JOB), eq(100L), eq("Software Engineer"), anyString(), anyMap()
+        );
+    }
+
+    @Test
+    @DisplayName("Should successfully delete job with zero applicants and record audit log")
+    void testDeleteJob_ZeroApplicants() {
+        testJob.setStatus(JobStatus.ARCHIVED);
+        User adminUser = User.builder().id(99L).email("admin@careerforge.local").role(Role.ROLE_ADMIN).build();
+
+        when(recruiterService.getOrCreateProfileEntity(2L)).thenReturn(recruiterProfile);
+        when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
+        when(applicationRepository.findAllByJob(testJob)).thenReturn(Collections.emptyList());
+        when(userRepository.findAllByRoleAndEnabledTrue(Role.ROLE_ADMIN)).thenReturn(List.of(adminUser));
+
+        jobService.deleteJob(2L, 100L);
+
+        verify(notificationService, never()).sendNotification(
+                anyLong(), anyLong(), anyString(), eq("Job Position Deleted"), anyString(), any(), anyString(), anyLong()
+        );
+        verify(notificationService, times(1)).sendNotification(
+                eq(99L), eq(2L), anyString(), eq("Job Deleted"), anyString(), eq(NotificationType.SYSTEM_ALERT), eq("JOB"), eq(100L)
+        );
+        verify(savedJobRepository, times(1)).deleteAllByJob(testJob);
+        verify(jobSkillRepository, times(1)).deleteAllByJob(testJob);
+        verify(jobRepository, times(1)).delete(testJob);
+        verify(auditLogService, times(1)).logSuccess(
+                eq(2L), anyString(), eq("ROLE_RECRUITER"), eq(AuditEventType.JOB_DELETED),
+                eq(AuditTargetType.JOB), eq(100L), eq("Software Engineer"), anyString(), anyMap()
+        );
+    }
+
+    @Test
     @DisplayName("Should enforce cross-company job access isolation")
     void testCrossCompanyIsolation_RejectAccess() {
         Company otherCompany = Company.builder().id(999L).name("Other Corp").build();
@@ -296,5 +403,29 @@ class JobServiceTest {
 
         assertThatThrownBy(() -> jobService.getJobDetailForRecruiter(2L, 100L))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("Should preserve required boolean flag for both required and optional skills in JobDetailResponse")
+    void testJobSkillsRequiredOptionalPreservation() {
+        testJob.setStatus(JobStatus.PUBLISHED);
+
+        Skill javaSkill = Skill.builder().id(1L).name("Java").category("Backend").build();
+        Skill mysqlSkill = Skill.builder().id(2L).name("MySQL").category("Database").build();
+
+        JobSkill reqSkill = JobSkill.builder().id(10L).job(testJob).skill(javaSkill).isRequired(true).minimumProficiency(SkillProficiency.INTERMEDIATE).build();
+        JobSkill optSkill = JobSkill.builder().id(11L).job(testJob).skill(mysqlSkill).isRequired(false).minimumProficiency(SkillProficiency.INTERMEDIATE).build();
+
+        when(jobRepository.findById(100L)).thenReturn(Optional.of(testJob));
+        when(jobSkillRepository.findAllByJobWithSkill(testJob)).thenReturn(List.of(reqSkill, optSkill));
+
+        JobDetailResponse response = jobService.getPublicJobDetail(100L);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getSkills()).hasSize(2);
+        assertThat(response.getSkills().get(0).getSkillName()).isEqualTo("Java");
+        assertThat(response.getSkills().get(0).isRequired()).isTrue();
+        assertThat(response.getSkills().get(1).getSkillName()).isEqualTo("MySQL");
+        assertThat(response.getSkills().get(1).isRequired()).isFalse();
     }
 }

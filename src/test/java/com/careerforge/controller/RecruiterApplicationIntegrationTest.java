@@ -251,7 +251,10 @@ class RecruiterApplicationIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("SHORTLISTED"));
 
         // 6. Transition SHORTLISTED -> INTERVIEW_SCHEDULED (future timestamp)
-        LocalDateTime futureInterview = LocalDateTime.of(2026, 8, 25, 14, 30);
+        LocalDateTime futureInterview = LocalDateTime.now().plusDays(2).withHour(14).withMinute(30).withSecond(0).withNano(0);
+        String formattedExpected = futureInterview.atZone(java.time.ZoneOffset.UTC)
+                .withZoneSameInstant(java.time.ZoneId.of("Asia/Kolkata"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy 'at' h:mm a", java.util.Locale.ENGLISH));
         mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/status")
                         .header("Authorization", recruiterTokenA)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -266,8 +269,8 @@ class RecruiterApplicationIntegrationTest {
         mockMvc.perform(get("/api/v1/notifications")
                         .header("Authorization", studentToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[0].title", containsString("Interview Invitation")))
-                .andExpect(jsonPath("$.data.content[0].message", containsString("Aug 25, 2026 at 2:30 PM")));
+                .andExpect(jsonPath("$.data.content[0].title", containsString("Interview Scheduled")))
+                .andExpect(jsonPath("$.data.content[0].message", containsString(formattedExpected)));
 
         // 7. Update recruiter notes
         mockMvc.perform(patch("/api/v1/recruiters/applications/" + applicationId + "/notes")
