@@ -45,3 +45,6 @@ careerforge-frontend/node_modules/
 
 # Frontend build output
 careerforge-frontend/dist/
+
+# Database backups
+*.sql
