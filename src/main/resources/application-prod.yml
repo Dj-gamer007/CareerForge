@@ -29,6 +29,11 @@ server:
     include-binding-errors: never
     include-stacktrace: never
 
+careerforge:
+  storage:
+    local-dir: ${STORAGE_LOCAL_DIR:/app/uploads/resumes}
+    max-file-size-bytes: ${STORAGE_MAX_FILE_SIZE:5242880}
+
 logging:
   level:
     root: INFO
