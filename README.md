@@ -105,7 +105,7 @@ CareerForge is an enterprise-grade full-stack recruitment and career management 
 | :--- | :--- | :--- |
 | `DB_URL` | MySQL Connection JDBC URL | `jdbc:mysql://localhost:3306/careerforge_db?...` |
 | `DB_USERNAME` | Database username | `root` |
-| `DB_PASSWORD` | Database password | Set via environment variable |
+| `DB_PASSWORD` | Database password | `Set via environment variable` |
 | `JWT_SECRET` | HMAC-SHA512 (HS512) Base64 encoded secret key | Default 512-bit key |
 | `JWT_EXPIRATION_MS` | Access Token Validity Duration (ms) | `86400000` (24 Hours) |
 | `JWT_REFRESH_EXPIRATION_MS` | Refresh Token Validity Duration (ms) | `604800000` (7 Days) |
