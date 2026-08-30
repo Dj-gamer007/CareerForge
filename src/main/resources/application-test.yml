@@ -21,7 +21,7 @@ spring:
 
 careerforge:
   jwt:
-    secret: c3VwZXItc2VjcmV0LWtleS1mb3ItY2FyZWVyZm9yZ2UtYXBwbGljYXRpb24tcHJvZHVjdGlvbi1yZWFkeQ==
+    secret: ${JWT_SECRET:test-only-secret-for-local-tests}
     expiration-ms: 3600000 # 1 hour
     refresh-expiration-ms: 86400000 # 24 hours
   matching:
